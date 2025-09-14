@@ -1,0 +1,8 @@
+﻿tensorflow-cpu
+numpy
+pillow
+scikit-image
+scikit-learn
+joblib
+pywavelets
+streamlit

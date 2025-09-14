@@ -1,0 +1,21 @@
+﻿# Python caches and build
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
