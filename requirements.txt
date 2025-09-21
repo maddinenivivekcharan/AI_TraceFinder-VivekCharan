@@ -9,3 +9,4 @@ pymupdf>=1.24.2
 # Add later if you want scanner-ID online and the memory allows:
 # tensorflow-cpu==2.14.0
 # Avoid pdf2image on Streamlit Cloud (Poppler is not available by default)
+tensorflow-cpu==2.14.0
