@@ -7,5 +7,3 @@ scikit-learn==1.7.2
 scipy==1.16.2
 pywavelets==1.9.0
 pymupdf==1.24.10
-pymupdf==1.24.10
-pdf2image==1.17.0
