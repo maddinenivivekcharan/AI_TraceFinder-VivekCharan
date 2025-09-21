@@ -1,4 +1,5 @@
 ﻿import os, re, glob, math, json, pickle
+from pathlib import Path
 import numpy as np
 import streamlit as st
 import cv2, pywt
@@ -6,9 +7,6 @@ from PIL import Image
 from skimage.feature import local_binary_pattern as sk_lbp
 
 # ---------------- CONFIG ----------------
-ROOT = r"C:\Users\vivek_ezflpin\AI_Tracefinder-VivekCharan\app\models"  # adjust if needed
-TAMP_ROOT = os.path.join(ROOT, "Tampered images")
-
 APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
 PATCH = 128
@@ -18,6 +16,20 @@ MAX_PATCHES = 16
 TOPK = 0.30
 HIT_THR = 0.85
 MIN_HITS = 2
+
+# Repo-relative paths (works on Streamlit Cloud and locally)
+BASE_DIR = Path(__file__).resolve().parent           # .../app
+ART_SCN = BASE_DIR / "models"                        # .../app/models
+TAMP_ROOT = ART_SCN / "Tampered images"
+ART_TP = ART_SCN / "artifacts_tamper_patch"
+ART_PAIR = ART_SCN / "artifacts_tamper_pair"
+
+def must_exist(p: Path, kind="file"):
+    if kind == "file" and not p.is_file():
+        raise FileNotFoundError(f"Missing required file: {p}")
+    if kind == "dir" and not p.is_dir():
+        raise FileNotFoundError(f"Missing required folder: {p}")
+    return p
 
 # ---------------- PDF backends ----------------
 PDF_BACKEND = None
@@ -131,23 +143,33 @@ def make_feat_vector(img_patch):
     return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
 
 # ---------------- Scanner-ID ----------------
-ART_SCN = ROOT
 hyb_model = None
 try:
     import tensorflow as tf
-    cand = [os.path.join(ART_SCN, "scanner_hybrid.keras"),
-            os.path.join(ART_SCN, "scanner_hybrid.h5"),
-            os.path.join(ART_SCN, "scanner_hybrid")]
-    found = next((p for p in cand if os.path.exists(p)), None)
+    cand = [ART_SCN / "scanner_hybrid.keras",
+            ART_SCN / "scanner_hybrid.h5",
+            ART_SCN / "scanner_hybrid"]
+    found = next((p for p in cand if p.exists()), None)
     if found:
-        hyb_model = tf.keras.models.load_model(found)
+        hyb_model = tf.keras.models.load_model(str(found))
 except Exception:
     hyb_model = None
 
-with open(os.path.join(ART_SCN, "hybrid_label_encoder.pkl"), "rb") as f: le_sc = pickle.load(f)
-with open(os.path.join(ART_SCN, "hybrid_feat_scaler.pkl"), "rb") as f: sc_sc = pickle.load(f)
-with open(os.path.join(ART_SCN, "scanner_fingerprints.pkl"), "rb") as f: fps = pickle.load(f)
-fp_keys = np.load(os.path.join(ART_SCN, "fp_keys.npy"), allow_pickle=True).tolist()
+# Required artifacts
+LE_PATH   = ART_SCN / "hybrid_label_encoder.pkl"
+SC_PATH   = ART_SCN / "hybrid_feat_scaler.pkl"
+FPS_PATH  = ART_SCN / "scanner_fingerprints.pkl"
+FPK_PATH  = ART_SCN / "fp_keys.npy"
+
+# Load artifacts (fail clearly if missing)
+try:
+    with must_exist(LE_PATH).open("rb") as f: le_sc = pickle.load(f)
+    with must_exist(SC_PATH).open("rb") as f: sc_sc = pickle.load(f)
+    with must_exist(FPS_PATH).open("rb") as f: fps = pickle.load(f)
+    fp_keys = np.load(must_exist(FPK_PATH), allow_pickle=True).tolist()
+except Exception as e:
+    st.error(f"Model artifacts missing under app/models. {e}")
+    st.stop()
 
 def corr2d(a, b):
     a = a.astype(np.float32).ravel(); b = b.astype(np.float32).ravel()
@@ -164,10 +186,13 @@ def make_scanner_feats(res):
     return sc_sc.transform(v)
 
 # ---------------- Single-image tamper ----------------
-ART_TP = os.path.join(ROOT, "artifacts_tamper_patch")
-with open(os.path.join(ART_TP, "patch_scaler.pkl"), "rb") as f: sc_tp = pickle.load(f)
-with open(os.path.join(ART_TP, "patch_svm_sig_calibrated.pkl"), "rb") as f: clf_tp = pickle.load(f)
-with open(os.path.join(ART_TP, "thresholds_patch.json"), "r") as f: THRS_TP = json.load(f)
+try:
+    with must_exist(ART_TP / "patch_scaler.pkl").open("rb") as f: sc_tp = pickle.load(f)
+    with must_exist(ART_TP / "patch_svm_sig_calibrated.pkl").open("rb") as f: clf_tp = pickle.load(f)
+    with must_exist(ART_TP / "thresholds_patch.json").open("r") as f: THRS_TP = json.load(f)
+except Exception as e:
+    st.error(f"Tamper (single) artifacts missing: {e}")
+    st.stop()
 
 def choose_thr_single(domain, typ):
     if "by_type" in THRS_TP and typ in THRS_TP["by_type"]:
@@ -189,31 +214,34 @@ def infer_tamper_single_from_residual(residual, domain, typ_hint):
     p_img = image_score_topk(p_patch, frac=TOPK)
     thr = choose_thr_single(domain, (typ_hint or "unknown"))
 
-    # SAFETY BUMP for Original domain to avoid rare false flips on Originals
+    # SAFETY BUMP for Original domain
     if domain == "orig_pdf_tif":
         thr = min(1.0, thr + 0.03)
 
     hits = int((p_patch >= HIT_THR).sum())
     tampered = int((p_img >= thr) and (hits >= MIN_HITS))
 
-    # FINAL GUARD: if domain is Original, force Clean regardless of borderline score
+    # FINAL GUARD: if domain is Original, force Clean
     if domain == "orig_pdf_tif":
         tampered = 0
 
     return tampered, p_img, thr, hits
 
 # ---------------- Paired tamper ----------------
-ART_PAIR = os.path.join(ROOT, "artifacts_tamper_pair")
-with open(os.path.join(ART_PAIR, "pair_scaler.pkl"), "rb") as f: sc_pair = pickle.load(f)
-with open(os.path.join(ART_PAIR, "pair_svm_sig.pkl"), "rb") as f: pair_clf = pickle.load(f)
-with open(os.path.join(ART_PAIR, "pair_thresholds_topk.json"), "r") as f: THR_PAIR = json.load(f)
+try:
+    with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
+    with must_exist(ART_PAIR / "pair_svm_sig.pkl").open("rb") as f: pair_clf = pickle.load(f)
+    with must_exist(ART_PAIR / "pair_thresholds_topk.json").open("r") as f: THR_PAIR = json.load(f)
+except Exception as e:
+    st.error(f"Tamper (pair) artifacts missing: {e}")
+    st.stop()
 
 def pid_from_name(p):
     m = re.search(r"(s\d+_\d+)", os.path.basename(p))
     return m.group(1) if m else None
 
 def build_orig_index():
-    orig_glob = glob.glob(os.path.join(TAMP_ROOT, "Original", "*.tif"))
+    orig_glob = glob.glob(str(TAMP_ROOT / "Original" / "*.tif"))
     return {pid_from_name(p): p for p in orig_glob if pid_from_name(p)}
 
 orig_map = build_orig_index()
@@ -266,7 +294,7 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
 def infer_domain_and_type_from_path_or_name(path_or_name: str):
     p = path_or_name.replace("\\", "/").lower()
 
-    # HARD MAP Original sources first (never overridden later)
+    # HARD MAP Original sources first
     if "/tampered images/original/" in p:
         return "orig_pdf_tif", None
     if "/originals_tif/official/" in p:
@@ -320,7 +348,7 @@ if uploaded:
         # Domain/type inference (no dropdown)
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
 
-        # EXTRA GUARANTEE: If filename carries a PID and the Original reference exists, force domain to Original
+        # If filename carries a PID and the Original reference exists, force Original
         pid = pid_from_name(display_name)
         if pid and (pid in orig_map):
             domain = "orig_pdf_tif"
