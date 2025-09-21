@@ -6,6 +6,6 @@ scikit-image>=0.22.0
 scikit-learn>=1.4.2
 pywavelets>=1.5.0
 pymupdf>=1.24.2
-# To enable scanner ID online, add later:
+# Add later if you want scanner-ID online and the memory allows:
 # tensorflow-cpu==2.14.0
-# Avoid pdf2image on Streamlit Cloud (Poppler not present)
+# Avoid pdf2image on Streamlit Cloud (Poppler is not available by default)
