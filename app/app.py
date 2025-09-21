@@ -1,4 +1,6 @@
-﻿import os, re, glob, math, json, pickle
+﻿# app/app.py
+
+import os, re, glob, math, json, pickle
 from pathlib import Path
 import numpy as np
 import streamlit as st
@@ -150,17 +152,18 @@ hyb_model = None
 scanner_ready = False
 scanner_err = None
 try:
-    import tensorflow as tf
+    import tensorflow as tf  # requires tensorflow-cpu in requirements
     cand = [ART_SCN / "scanner_hybrid.keras",
             ART_SCN / "scanner_hybrid.h5",
             ART_SCN / "scanner_hybrid"]
     found = next((p for p in cand if p.exists()), None)
     if found:
         hyb_model = tf.keras.models.load_model(str(found))
+    else:
+        scanner_err = "No scanner_hybrid model file found under app/models."
 except Exception as e:
     scanner_err = f"TF model load failed: {e}"
 
-# Required artifacts
 try:
     LE_PATH = must_exist(ART_SCN / "hybrid_label_encoder.pkl")
     SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
@@ -172,7 +175,6 @@ try:
     fp_keys = np.load(FPK_PATH, allow_pickle=True).tolist()
     if not isinstance(fp_keys, (list, tuple)) or len(fp_keys) == 0:
         raise ValueError("fp_keys empty or invalid")
-    # quick integrity check
     if any(k not in fps for k in fp_keys):
         missing = [k for k in fp_keys if k not in fps]
         raise ValueError(f"Missing fingerprints for keys: {missing[:3]} ...")
@@ -188,7 +190,6 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
-    # Expected training order: [corr(len(fp_keys)) | fft(6) | lbp(10)]
     v_corr = [corr2d(res, fps[k]) for k in fp_keys]
     v_fft  = fft_radial_energy(res, K=6).tolist()
     v_lbp  = lbp_hist_safe(res, P=8, R=1.0).tolist()
@@ -196,7 +197,6 @@ def make_scanner_feats(res):
     return sc_sc.transform(v)
 
 def try_scanner_predict(residual):
-    # Return (label, conf) or ("Unknown",0.0) with debug banners
     if not scanner_ready:
         if scanner_err:
             st.info(f"Scanner-ID disabled: {scanner_err}")
@@ -204,11 +204,8 @@ def try_scanner_predict(residual):
     try:
         x_img = np.expand_dims(residual, axis=(0, -1))
         x_ft  = make_scanner_feats(residual)
-        # Validate expected input count (2) and feature dims
         preds = hyb_model.predict([x_img, x_ft], verbose=0)
         ps = preds.ravel()
-        if ps.size == 0 or np.any(~np.isfinite(ps)):
-            raise ValueError("Non-finite predictions")
         s_idx = int(np.argmax(ps))
         return str(le_sc.classes_[s_idx]), float(ps[s_idx] * 100.0)
     except Exception as e:
