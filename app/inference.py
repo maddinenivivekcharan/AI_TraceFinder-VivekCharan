@@ -43,6 +43,7 @@ def fft_radial_energy(img, K=6):
     return feats
 
 def lbp_hist_safe(img, P=8, R=1.0):
+    # NumPy 2.0: use np.ptp(img)
     rng = float(np.ptp(img))
     if rng < 1e-12:
         g = np.zeros_like(img, dtype=np.float32)
