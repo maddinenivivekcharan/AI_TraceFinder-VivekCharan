@@ -17,9 +17,9 @@ TOPK = 0.30
 HIT_THR = 0.85
 MIN_HITS = 2
 
-# Repo-relative paths (works on Streamlit Cloud and locally)
-BASE_DIR = Path(__file__).resolve().parent           # .../app
-ART_SCN = BASE_DIR / "models"                        # .../app/models
+# Repo-relative paths
+BASE_DIR = Path(__file__).resolve().parent
+ART_SCN = BASE_DIR / "models"
 TAMP_ROOT = ART_SCN / "Tampered images"
 ART_TP = ART_SCN / "artifacts_tamper_patch"
 ART_PAIR = ART_SCN / "artifacts_tamper_pair"
@@ -31,45 +31,32 @@ def must_exist(p: Path, kind="file"):
         raise FileNotFoundError(f"Missing required folder: {p}")
     return p
 
-# ---------------- PDF backends ----------------
-PDF_BACKEND = None
+# ---------------- PDF backend (PyMuPDF only) ----------------
+PDF_BACKEND = "pymupdf"
 try:
-    from pdf2image import convert_from_bytes as pdf2img_convert
-    PDF_BACKEND = "pdf2image"
+    import fitz  # PyMuPDF
 except Exception:
-    try:
-        import fitz  # PyMuPDF
-        PDF_BACKEND = "pymupdf"
-    except Exception:
-        PDF_BACKEND = None
+    PDF_BACKEND = None
+
+def pdf_bytes_to_bgr(file_bytes: bytes):
+    if PDF_BACKEND != "pymupdf":
+        raise ImportError("PDF support not available. Please add 'pymupdf' to requirements.txt.")
+    import fitz
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    if doc.page_count == 0:
+        raise ValueError("PDF has no pages")
+    page = doc.load_page(0)
+    pix = page.get_pixmap(dpi=300)
+    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    if pix.n == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
 # ---------------- Page ----------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
-# ---------------- Utils: decoding and residual ----------------
-def pdf_bytes_to_bgr(file_bytes: bytes):
-    if PDF_BACKEND == "pdf2image":
-        pages = pdf2img_convert(file_bytes, dpi=300, fmt="png")
-        if not pages:
-            raise ValueError("PDF has no pages")
-        pil = pages[0].convert("RGB")
-        rgb = np.array(pil)
-        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    elif PDF_BACKEND == "pymupdf":
-        import fitz
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        if doc.page_count == 0:
-            raise ValueError("PDF has no pages")
-        page = doc.load_page(0)
-        pix = page.get_pixmap(dpi=300)
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-        if pix.n == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-        return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    else:
-        raise ImportError("PDF support not available. Install 'pdf2image' (with poppler) or 'pymupdf'.")
-
+# ---------------- Low-level utils ----------------
 def decode_upload_to_bgr(uploaded):
     raw = uploaded.read()
     name = uploaded.name
@@ -142,6 +129,33 @@ def make_feat_vector(img_patch):
     rsp3 = fft_resample_feats(img_patch)
     return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
 
+# ---------------- Domain/type inference (defined before use) ----------------
+def infer_domain_and_type_from_path_or_name(path_or_name: str):
+    p = path_or_name.replace("\\", "/").lower()
+    # Original sources
+    if "/tampered images/original/" in p:
+        return "orig_pdf_tif", None
+    if "/originals_tif/official/" in p:
+        return "orig_pdf_tif", None
+    if "/originals_tif/wikipedia/" in p:
+        return "orig_pdf_tif", None
+    # Tampered subfolders
+    if "/tampered images/tampered/copy-move/" in p:
+        return "tamper_dir", "copy-move"
+    if "/tampered images/tampered/retouching/" in p:
+        return "tamper_dir", "retouch"
+    if "/tampered images/tampered/splicing/" in p:
+        return "tamper_dir", "splice"
+    # Suffix hints
+    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
+        return "tamper_dir", "splice"
+    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
+        return "tamper_dir", "copy-move"
+    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
+        return "tamper_dir", "retouch"
+    # Default
+    return "orig_pdf_tif", None
+
 # ---------------- Scanner-ID ----------------
 hyb_model = None
 try:
@@ -161,7 +175,6 @@ SC_PATH   = ART_SCN / "hybrid_feat_scaler.pkl"
 FPS_PATH  = ART_SCN / "scanner_fingerprints.pkl"
 FPK_PATH  = ART_SCN / "fp_keys.npy"
 
-# Load artifacts (fail clearly if missing)
 try:
     with must_exist(LE_PATH).open("rb") as f: le_sc = pickle.load(f)
     with must_exist(SC_PATH).open("rb") as f: sc_sc = pickle.load(f)
@@ -178,7 +191,6 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
-    # Match training feature order exactly: [corr(11) | fft(6) | lbp(10)]
     v_corr = [corr2d(res, fps[k]) for k in fp_keys]
     v_fft  = fft_radial_energy(res, K=6)
     v_lbp  = lbp_hist_safe(res, P=8, R=1.0)
@@ -213,18 +225,12 @@ def infer_tamper_single_from_residual(residual, domain, typ_hint):
     p_patch = clf_tp.predict_proba(feats)[:, 1]
     p_img = image_score_topk(p_patch, frac=TOPK)
     thr = choose_thr_single(domain, (typ_hint or "unknown"))
-
-    # SAFETY BUMP for Original domain
     if domain == "orig_pdf_tif":
         thr = min(1.0, thr + 0.03)
-
     hits = int((p_patch >= HIT_THR).sum())
     tampered = int((p_img >= thr) and (hits >= MIN_HITS))
-
-    # FINAL GUARD: if domain is Original, force Clean
     if domain == "orig_pdf_tif":
         tampered = 0
-
     return tampered, p_img, thr, hits
 
 # ---------------- Paired tamper ----------------
@@ -260,18 +266,14 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     Xd = np.asarray(Xd, np.float32)
     Xd_s = sc_pair.transform(Xd)
     p_patch = pair_clf.predict_proba(Xd_s)[:, 1]
-
     typ = (typ_hint or "unknown").lower()
     thr_base = THR_PAIR.get("by_type", {}).get(typ, THR_PAIR.get("global", 0.5))
     thr_eff = max(thr_base - 0.02, 0.0)
-
     frac_use = 0.20 if typ == "retouch" else 0.30
     n = len(p_patch); k = max(1, int(math.ceil(frac_use * n)))
     top_idx = np.argsort(p_patch)[-k:]
     p_img = float(np.mean(p_patch[top_idx]))
-
     def hits_topk(gate): return int(np.sum(p_patch[top_idx] >= gate))
-
     if typ == "copy-move":
         local_gate = 0.78
         hits = hits_topk(local_gate)
@@ -282,44 +284,12 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
         hits = hits_topk(local_gate)
         ok = (p_img >= 0.60) or ((p_img >= max(thr_eff, 0.65)) and (hits >= 2))
         thr_used = 0.60
-    else:  # splice/default
+    else:
         local_gate = 0.80
         hits = hits_topk(local_gate)
         ok = (p_img >= thr_base) and (hits >= 2)
         thr_used = thr_base
-
     return int(ok), p_img, thr_used, hits
-
-# ---------------- Domain/type inference (Original-first and safe) ----------------
-def infer_domain_and_type_from_path_or_name(path_or_name: str):
-    p = path_or_name.replace("\\", "/").lower()
-
-    # HARD MAP Original sources first
-    if "/tampered images/original/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/official/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/wikipedia/" in p:
-        return "orig_pdf_tif", None
-
-    # Tampered subfolders
-    if "/tampered images/tampered/copy-move/" in p:
-        return "tamper_dir", "copy-move"
-    if "/tampered images/tampered/retouching/" in p:
-        return "tamper_dir", "retouch"
-    if "/tampered images/tampered/splicing/" in p:
-        return "tamper_dir", "splice"
-
-    # Suffix-based signals; otherwise stay Original
-    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "splice"
-    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "copy-move"
-    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "retouch"
-
-    # Safe default
-    return "orig_pdf_tif", None
 
 # ---------------- UI ----------------
 st.write("")
@@ -345,17 +315,14 @@ if uploaded:
         except Exception:
             pass
 
-        # Domain/type inference (no dropdown)
+        # Domain/type inference
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
 
-        # If filename carries a PID and the Original reference exists, force Original
+        # Prefer paired if Original reference exists for this PID
         pid = pid_from_name(display_name)
         if pid and (pid in orig_map):
             domain = "orig_pdf_tif"
             typ_hint = None
-
-        # Prefer paired if PID has an Original reference on disk
-        if pid and (pid in orig_map):
             is_t, p_img, thr_used, hits = paired_infer_type_aware(orig_map[pid], residual, typ_hint)
         else:
             is_t, p_img, thr_used, hits = infer_tamper_single_from_residual(residual, domain, typ_hint)
@@ -379,7 +346,6 @@ if uploaded:
                 """,
                 unsafe_allow_html=True
             )
-
     except ImportError as e:
         st.error(str(e))
     except Exception as e:
