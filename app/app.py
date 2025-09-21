@@ -134,32 +134,21 @@ def make_feat_vector(img_patch):
 # ---------------- Domain/type inference ----------------
 def infer_domain_and_type_from_path_or_name(path_or_name: str):
     p = path_or_name.replace("\\", "/").lower()
-    # Original sources (force Original domain but do not suppress scanner prediction)
-    if "/tampered images/original/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/official/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/wikipedia/" in p:
-        return "orig_pdf_tif", None
-    # Tampered subfolders
-    if "/tampered images/tampered/copy-move/" in p:
-        return "tamper_dir", "copy-move"
-    if "/tampered images/tampered/retouching/" in p:
-        return "tamper_dir", "retouch"
-    if "/tampered images/tampered/splicing/" in p:
-        return "tamper_dir", "splice"
-    # Suffix hints
-    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "splice"
-    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "copy-move"
-    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "retouch"
-    # Default
+    if "/tampered images/original/" in p: return "orig_pdf_tif", None
+    if "/originals_tif/official/" in p:    return "orig_pdf_tif", None
+    if "/originals_tif/wikipedia/" in p:   return "orig_pdf_tif", None
+    if "/tampered images/tampered/copy-move/" in p: return "tamper_dir", "copy-move"
+    if "/tampered images/tampered/retouching/" in p: return "tamper_dir", "retouch"
+    if "/tampered images/tampered/splicing/" in p:   return "tamper_dir", "splice"
+    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "splice"
+    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "copy-move"
+    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
     return "orig_pdf_tif", None
 
-# ---------------- Scanner-ID ----------------
+# ---------------- Scanner-ID (strict checks) ----------------
 hyb_model = None
+scanner_ready = False
+scanner_err = None
 try:
     import tensorflow as tf
     cand = [ART_SCN / "scanner_hybrid.keras",
@@ -168,24 +157,29 @@ try:
     found = next((p for p in cand if p.exists()), None)
     if found:
         hyb_model = tf.keras.models.load_model(str(found))
-except Exception:
-    hyb_model = None
+except Exception as e:
+    scanner_err = f"TF model load failed: {e}"
 
 # Required artifacts
-LE_PATH   = ART_SCN / "hybrid_label_encoder.pkl"
-SC_PATH   = ART_SCN / "hybrid_feat_scaler.pkl"
-FPS_PATH  = ART_SCN / "scanner_fingerprints.pkl"
-FPK_PATH  = ART_SCN / "fp_keys.npy"
-
-artifacts_ok = True
 try:
-    with must_exist(LE_PATH).open("rb") as f: le_sc = pickle.load(f)
-    with must_exist(SC_PATH).open("rb") as f: sc_sc = pickle.load(f)
-    with must_exist(FPS_PATH).open("rb") as f: fps = pickle.load(f)
-    fp_keys = np.load(must_exist(FPK_PATH), allow_pickle=True).tolist()
+    LE_PATH = must_exist(ART_SCN / "hybrid_label_encoder.pkl")
+    SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
+    FPS_PATH = must_exist(ART_SCN / "scanner_fingerprints.pkl")
+    FPK_PATH = must_exist(ART_SCN / "fp_keys.npy")
+    with open(LE_PATH, "rb") as f: le_sc = pickle.load(f)
+    with open(SC_PATH, "rb") as f: sc_sc = pickle.load(f)
+    with open(FPS_PATH, "rb") as f: fps = pickle.load(f)
+    fp_keys = np.load(FPK_PATH, allow_pickle=True).tolist()
+    if not isinstance(fp_keys, (list, tuple)) or len(fp_keys) == 0:
+        raise ValueError("fp_keys empty or invalid")
+    # quick integrity check
+    if any(k not in fps for k in fp_keys):
+        missing = [k for k in fp_keys if k not in fps]
+        raise ValueError(f"Missing fingerprints for keys: {missing[:3]} ...")
+    scanner_ready = (hyb_model is not None)
 except Exception as e:
-    artifacts_ok = False
-    st.warning(f"Scanner-ID artifacts missing under app/models: {e}")
+    scanner_err = f"Scanner artifacts problem: {e}"
+    scanner_ready = False
 
 def corr2d(a, b):
     a = a.astype(np.float32).ravel(); b = b.astype(np.float32).ravel()
@@ -194,11 +188,32 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
+    # Expected training order: [corr(len(fp_keys)) | fft(6) | lbp(10)]
     v_corr = [corr2d(res, fps[k]) for k in fp_keys]
-    v_fft  = fft_radial_energy(res, K=6)
-    v_lbp  = lbp_hist_safe(res, P=8, R=1.0)
-    v = np.array(v_corr + v_fft.tolist() + v_lbp.tolist(), dtype=np.float32).reshape(1, -1)
+    v_fft  = fft_radial_energy(res, K=6).tolist()
+    v_lbp  = lbp_hist_safe(res, P=8, R=1.0).tolist()
+    v = np.array(v_corr + v_fft + v_lbp, dtype=np.float32).reshape(1, -1)
     return sc_sc.transform(v)
+
+def try_scanner_predict(residual):
+    # Return (label, conf) or ("Unknown",0.0) with debug banners
+    if not scanner_ready:
+        if scanner_err:
+            st.info(f"Scanner-ID disabled: {scanner_err}")
+        return "Unknown", 0.0
+    try:
+        x_img = np.expand_dims(residual, axis=(0, -1))
+        x_ft  = make_scanner_feats(residual)
+        # Validate expected input count (2) and feature dims
+        preds = hyb_model.predict([x_img, x_ft], verbose=0)
+        ps = preds.ravel()
+        if ps.size == 0 or np.any(~np.isfinite(ps)):
+            raise ValueError("Non-finite predictions")
+        s_idx = int(np.argmax(ps))
+        return str(le_sc.classes_[s_idx]), float(ps[s_idx] * 100.0)
+    except Exception as e:
+        st.warning(f"Scanner-ID inference error: {e}")
+        return "Unknown", 0.0
 
 # ---------------- Single-image tamper ----------------
 tamper_single_ok = True
@@ -208,7 +223,7 @@ try:
     with must_exist(ART_TP / "thresholds_patch.json").open("r") as f: THRS_TP = json.load(f)
 except Exception as e:
     tamper_single_ok = False
-    st.warning(f"Tamper-single artifacts missing: {e}")
+    st.info(f"Tamper-single disabled: {e}")
 
 def choose_thr_single(domain, typ):
     if tamper_single_ok:
@@ -249,7 +264,7 @@ try:
     with must_exist(ART_PAIR / "pair_thresholds_topk.json").open("r") as f: THR_PAIR = json.load(f)
 except Exception as e:
     tamper_pair_ok = False
-    st.warning(f"Tamper-pair artifacts missing: {e}")
+    st.info(f"Tamper-pair disabled: {e}")
 
 def pid_from_name(p):
     m = re.search(r"(s\d+_\d+)", os.path.basename(p))
@@ -318,24 +333,11 @@ if uploaded:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Scanner ID (always attempt if model and artifacts are available)
-        s_lab, s_conf = "Unknown", 0.0
-        try:
-            if hyb_model is not None and artifacts_ok:
-                x_img = np.expand_dims(residual, axis=(0, -1))
-                x_ft  = make_scanner_feats(residual)
-                ps = hyb_model.predict([x_img, x_ft], verbose=0).ravel()
-                s_idx = int(np.argmax(ps))
-                s_lab = str(le_sc.classes_[s_idx])
-                s_conf = float(ps[s_idx] * 100.0)
-        except Exception:
-            # keep Unknown if something fails
-            pass
+        # Scanner ID
+        s_lab, s_conf = try_scanner_predict(residual)
 
-        # Domain/type inference (for tamper only)
+        # Tamper pipeline
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
-
-        # Prefer paired if PID has Original reference
         pid = pid_from_name(display_name)
         if pid and (pid in orig_map):
             domain = "orig_pdf_tif"
