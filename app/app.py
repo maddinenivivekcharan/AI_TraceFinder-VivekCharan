@@ -17,7 +17,7 @@ TOPK = 0.30
 HIT_THR = 0.85
 MIN_HITS = 2
 
-# Repo-relative paths
+# ---------------- Paths (repo-relative) ----------------
 BASE_DIR = Path(__file__).resolve().parent
 ART_SCN = BASE_DIR / "models"
 TAMP_ROOT = ART_SCN / "Tampered images"
@@ -31,16 +31,18 @@ def must_exist(p: Path, kind="file"):
         raise FileNotFoundError(f"Missing required folder: {p}")
     return p
 
-# ---------------- PDF backend (PyMuPDF only) ----------------
+# ---------------- PDF via PyMuPDF only ----------------
 PDF_BACKEND = "pymupdf"
 try:
     import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
 except Exception:
+    PYMUPDF_AVAILABLE = False
     PDF_BACKEND = None
 
 def pdf_bytes_to_bgr(file_bytes: bytes):
-    if PDF_BACKEND != "pymupdf":
-        raise ImportError("PDF support not available. Please add 'pymupdf' to requirements.txt.")
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("PDF support not available. Add 'pymupdf' to requirements.txt and redeploy.")
     import fitz
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     if doc.page_count == 0:
@@ -56,7 +58,7 @@ def pdf_bytes_to_bgr(file_bytes: bytes):
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
-# ---------------- Low-level utils ----------------
+# ---------------- Image utils ----------------
 def decode_upload_to_bgr(uploaded):
     raw = uploaded.read()
     name = uploaded.name
@@ -129,10 +131,10 @@ def make_feat_vector(img_patch):
     rsp3 = fft_resample_feats(img_patch)
     return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
 
-# ---------------- Domain/type inference (defined before use) ----------------
+# ---------------- Domain/type inference ----------------
 def infer_domain_and_type_from_path_or_name(path_or_name: str):
     p = path_or_name.replace("\\", "/").lower()
-    # Original sources
+    # Original sources (force Original domain but do not suppress scanner prediction)
     if "/tampered images/original/" in p:
         return "orig_pdf_tif", None
     if "/originals_tif/official/" in p:
@@ -175,14 +177,15 @@ SC_PATH   = ART_SCN / "hybrid_feat_scaler.pkl"
 FPS_PATH  = ART_SCN / "scanner_fingerprints.pkl"
 FPK_PATH  = ART_SCN / "fp_keys.npy"
 
+artifacts_ok = True
 try:
     with must_exist(LE_PATH).open("rb") as f: le_sc = pickle.load(f)
     with must_exist(SC_PATH).open("rb") as f: sc_sc = pickle.load(f)
     with must_exist(FPS_PATH).open("rb") as f: fps = pickle.load(f)
     fp_keys = np.load(must_exist(FPK_PATH), allow_pickle=True).tolist()
 except Exception as e:
-    st.error(f"Model artifacts missing under app/models. {e}")
-    st.stop()
+    artifacts_ok = False
+    st.warning(f"Scanner-ID artifacts missing under app/models: {e}")
 
 def corr2d(a, b):
     a = a.astype(np.float32).ravel(); b = b.astype(np.float32).ravel()
@@ -198,20 +201,23 @@ def make_scanner_feats(res):
     return sc_sc.transform(v)
 
 # ---------------- Single-image tamper ----------------
+tamper_single_ok = True
 try:
     with must_exist(ART_TP / "patch_scaler.pkl").open("rb") as f: sc_tp = pickle.load(f)
     with must_exist(ART_TP / "patch_svm_sig_calibrated.pkl").open("rb") as f: clf_tp = pickle.load(f)
     with must_exist(ART_TP / "thresholds_patch.json").open("r") as f: THRS_TP = json.load(f)
 except Exception as e:
-    st.error(f"Tamper (single) artifacts missing: {e}")
-    st.stop()
+    tamper_single_ok = False
+    st.warning(f"Tamper-single artifacts missing: {e}")
 
 def choose_thr_single(domain, typ):
-    if "by_type" in THRS_TP and typ in THRS_TP["by_type"]:
-        return THRS_TP["by_type"][typ]
-    if "by_domain" in THRS_TP and domain in THRS_TP["by_domain"]:
-        return THRS_TP["by_domain"][domain]
-    return THRS_TP.get("global", 0.5)
+    if tamper_single_ok:
+        if "by_type" in THRS_TP and typ in THRS_TP["by_type"]:
+            return THRS_TP["by_type"][typ]
+        if "by_domain" in THRS_TP and domain in THRS_TP["by_domain"]:
+            return THRS_TP["by_domain"][domain]
+        return THRS_TP.get("global", 0.5)
+    return 0.5
 
 def image_score_topk(patch_probs, frac=TOPK):
     n = len(patch_probs); k = max(1, int(math.ceil(frac * n)))
@@ -219,6 +225,8 @@ def image_score_topk(patch_probs, frac=TOPK):
     return float(np.mean(top))
 
 def infer_tamper_single_from_residual(residual, domain, typ_hint):
+    if not tamper_single_ok:
+        return 0, 0.0, 0.5, 0
     patches = extract_patches(residual, limit=MAX_PATCHES, seed=123)
     feats = np.stack([make_feat_vector(p) for p in patches], 0)
     feats = sc_tp.transform(feats)
@@ -234,25 +242,31 @@ def infer_tamper_single_from_residual(residual, domain, typ_hint):
     return tampered, p_img, thr, hits
 
 # ---------------- Paired tamper ----------------
+tamper_pair_ok = True
 try:
     with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
     with must_exist(ART_PAIR / "pair_svm_sig.pkl").open("rb") as f: pair_clf = pickle.load(f)
     with must_exist(ART_PAIR / "pair_thresholds_topk.json").open("r") as f: THR_PAIR = json.load(f)
 except Exception as e:
-    st.error(f"Tamper (pair) artifacts missing: {e}")
-    st.stop()
+    tamper_pair_ok = False
+    st.warning(f"Tamper-pair artifacts missing: {e}")
 
 def pid_from_name(p):
     m = re.search(r"(s\d+_\d+)", os.path.basename(p))
     return m.group(1) if m else None
 
 def build_orig_index():
-    orig_glob = glob.glob(str(TAMP_ROOT / "Original" / "*.tif"))
-    return {pid_from_name(p): p for p in orig_glob if pid_from_name(p)}
+    try:
+        orig_glob = glob.glob(str(TAMP_ROOT / "Original" / "*.tif"))
+        return {pid_from_name(p): p for p in orig_glob if pid_from_name(p)}
+    except Exception:
+        return {}
 
 orig_map = build_orig_index()
 
 def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
+    if not tamper_pair_ok or not clean_path:
+        return 0, 0.0, 0.5, 0
     clean_bgr = cv2.imread(clean_path, cv2.IMREAD_UNCHANGED)
     r1 = load_to_residual_from_bgr(clean_bgr)
     patches1 = extract_patches(r1, limit=MAX_PATCHES, seed=777)
@@ -304,21 +318,24 @@ if uploaded:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Scanner ID
+        # Scanner ID (always attempt if model and artifacts are available)
         s_lab, s_conf = "Unknown", 0.0
         try:
-            if 'tf' in globals() and hyb_model is not None:
+            if hyb_model is not None and artifacts_ok:
                 x_img = np.expand_dims(residual, axis=(0, -1))
                 x_ft  = make_scanner_feats(residual)
                 ps = hyb_model.predict([x_img, x_ft], verbose=0).ravel()
-                s_idx = int(np.argmax(ps)); s_lab = le_sc.classes_[s_idx]; s_conf = float(ps[s_idx] * 100.0)
+                s_idx = int(np.argmax(ps))
+                s_lab = str(le_sc.classes_[s_idx])
+                s_conf = float(ps[s_idx] * 100.0)
         except Exception:
+            # keep Unknown if something fails
             pass
 
-        # Domain/type inference
+        # Domain/type inference (for tamper only)
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
 
-        # Prefer paired if Original reference exists for this PID
+        # Prefer paired if PID has Original reference
         pid = pid_from_name(display_name)
         if pid and (pid in orig_map):
             domain = "orig_pdf_tif"
