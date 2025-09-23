@@ -62,7 +62,6 @@ st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True
 
 # ---------------- Image utils ----------------
 def decode_upload_to_bgr(uploaded):
-    # Ensure we read from the beginning
     try:
         uploaded.seek(0)
     except Exception:
@@ -334,10 +333,9 @@ uploaded = st.file_uploader(
 def safe_show_image(img_bgr):
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     try:
-        # Preferred on newer Streamlit
         st.image(rgb, use_container_width=True)
     except TypeError:
-        # Fallback for older Streamlit that lacks the kwarg
+        # Older Streamlit builds don’t accept the kwarg
         st.image(rgb)
 
 if uploaded:
