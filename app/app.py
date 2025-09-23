@@ -62,13 +62,19 @@ st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True
 
 # ---------------- Image utils ----------------
 def decode_upload_to_bgr(uploaded):
+    # Ensure we read from the beginning
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
     raw = uploaded.read()
     name = uploaded.name
     ext = os.path.splitext(name.lower())[-1]
     if ext == ".pdf":
         bgr = pdf_bytes_to_bgr(raw)
         return bgr, name
-    bgr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_UNCHANGED)
+    buf = np.frombuffer(raw, np.uint8)
+    bgr = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
     if bgr is None:
         raise ValueError("Could not decode file")
     return bgr, name
@@ -325,6 +331,15 @@ uploaded = st.file_uploader(
     label_visibility="collapsed"
 )
 
+def safe_show_image(img_bgr):
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    try:
+        # Preferred on newer Streamlit
+        st.image(rgb, use_container_width=True)
+    except TypeError:
+        # Fallback for older Streamlit that lacks the kwarg
+        st.image(rgb)
+
 if uploaded:
     try:
         bgr, display_name = decode_upload_to_bgr(uploaded)
@@ -347,7 +362,7 @@ if uploaded:
 
         colL, colR = st.columns([1.2, 1.8], gap="large")
         with colR:
-            st.image(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), use_container_width=True)
+            safe_show_image(bgr)
         with colL:
             st.markdown(
                 f"""
