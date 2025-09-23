@@ -7,4 +7,4 @@ scikit-learn==1.4.2
 scipy==1.11.4
 pywavelets==1.5.0
 pymupdf==1.23.26
-tensorflow-cpu==2.12.1
+tensorflow-cpu==2.20.0
