@@ -13,13 +13,17 @@ APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
 PATCH = 128
 STRIDE = 64
-MAX_PATCHES = 16  # used for scanner feats and image-level aggregation
+MAX_PATCHES = 16
+
+TOPK = 0.30
+HIT_THR = 0.85
+MIN_HITS = 2
 
 # ---------------- Paths (repo-relative) ----------------
 BASE_DIR = Path(__file__).resolve().parent
 ART_SCN = BASE_DIR / "models"
-ART_IMG = ART_SCN  # image-level artifacts live directly under models
-TAMP_ROOT = ART_SCN / "Tampered images"  # for paired originals
+TAMP_ROOT = ART_SCN / "Tampered images"
+ART_TP = ART_SCN / "artifacts_tamper_patch"
 ART_PAIR = ART_SCN / "artifacts_tamper_pair"
 
 def must_exist(p: Path, kind="file"):
@@ -112,14 +116,49 @@ def fft_radial_energy(img, K=6):
         feats.append(float(mag[m].mean() if m.any() else 0.0))
     return np.asarray(feats, dtype=np.float32)
 
+def residual_stats(img):
+    return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], dtype=np.float32)
+
+def fft_resample_feats(img):
+    f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
+    h, w = mag.shape; cy, cx = h // 2, w // 2
+    yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
+    rmax = r.max() + 1e-6
+    b1 = (r >= 0.25 * rmax) & (r < 0.35 * rmax)
+    b2 = (r >= 0.35 * rmax) & (r < 0.50 * rmax)
+    e1 = float(mag[b1].mean() if b1.any() else 0.0)
+    e2 = float(mag[b2].mean() if b2.any() else 0.0)
+    ratio = float(e2 / (e1 + 1e-8))
+    return np.asarray([e1, e2, ratio], dtype=np.float32)
+
+def make_feat_vector(img_patch):
+    lbp = lbp_hist_safe(img_patch, 8, 1.0)
+    fft6 = fft_radial_energy(img_patch, 6)
+    res3 = residual_stats(img_patch)
+    rsp3 = fft_resample_feats(img_patch)
+    return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
+
+# ---------------- Domain/type inference ----------------
+def infer_domain_and_type_from_path_or_name(path_or_name: str):
+    p = path_or_name.replace("\\", "/").lower()
+    if "/tampered images/original/" in p: return "orig_pdf_tif", None
+    if "/originals_tif/official/" in p:    return "orig_pdf_tif", None
+    if "/originals_tif/wikipedia/" in p:   return "orig_pdf_tif", None
+    if "/tampered images/tampered/copy-move/" in p: return "tamper_dir", "copy-move"
+    if "/tampered images/tampered/retouching/" in p: return "tamper_dir", "retouch"
+    if "/tampered images/tampered/splicing/" in p:   return "tamper_dir", "splice"
+    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "splice"
+    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "copy-move"
+    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
+    return "orig_pdf_tif", None
+
 # ---------------- Scanner-ID (strict checks) ----------------
 hyb_model = None
 scanner_ready = False
 scanner_err = None
 try:
     import tensorflow as tf  # requires tensorflow-cpu in requirements
-    cand = [ART_SCN / "scanner_hybrid_14.keras",
-            ART_SCN / "scanner_hybrid.keras",
+    cand = [ART_SCN / "scanner_hybrid.keras",
             ART_SCN / "scanner_hybrid.h5",
             ART_SCN / "scanner_hybrid"]
     found = next((p for p in cand if p.exists()), None)
@@ -133,8 +172,8 @@ except Exception as e:
 try:
     LE_PATH = must_exist(ART_SCN / "hybrid_label_encoder.pkl")
     SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
-    FPS_PATH = must_exist(ART_SCN / "scanner_fingerprints_14.pkl")
-    FPK_PATH = must_exist(ART_SCN / "fp_keys_14.npy")
+    FPS_PATH = must_exist(ART_SCN / "scanner_fingerprints.pkl")
+    FPK_PATH = must_exist(ART_SCN / "fp_keys.npy")
     with open(LE_PATH, "rb") as f: le_sc = pickle.load(f)
     with open(SC_PATH, "rb") as f: sc_sc = pickle.load(f)
     with open(FPS_PATH, "rb") as f: fps = pickle.load(f)
@@ -178,47 +217,48 @@ def try_scanner_predict(residual):
         st.warning(f"Scanner-ID inference error: {e}")
         return "Unknown", 0.0
 
-# ---------------- Image-level tamper (single-image) ----------------
-tamper_image_ok = True
+# ---------------- Single-image tamper ----------------
+tamper_single_ok = True
 try:
-    with must_exist(ART_IMG / "image_scaler.pkl").open("rb") as f: sc_img = pickle.load(f)
-    with must_exist(ART_IMG / "image_svm_sig.pkl").open("rb") as f: clf_img = pickle.load(f)
-    with must_exist(ART_IMG / "image_thresholds.json").open("r") as f: THR_IMG = json.load(f)
+    with must_exist(ART_TP / "patch_scaler.pkl").open("rb") as f: sc_tp = pickle.load(f)
+    with must_exist(ART_TP / "patch_svm_sig_calibrated.pkl").open("rb") as f: clf_tp = pickle.load(f)
+    with must_exist(ART_TP / "thresholds_patch.json").open("r") as f: THRS_TP = json.load(f)
 except Exception as e:
-    tamper_image_ok = False
-    st.info(f"Tamper (image-level) disabled: {e}")
+    tamper_single_ok = False
+    st.info(f"Tamper-single disabled: {e}")
 
-def image_feat_mean(res):
-    patches = extract_patches(res, limit=MAX_PATCHES, seed=111)
-    feats = []
-    for p in patches:
-        lbp = lbp_hist_safe(p, 8, 1.0)
-        fft6 = fft_radial_energy(p, 6)
-        # contrast 2 dims
-        c1 = float(np.std(p)); c2 = float(np.mean(np.abs(p - np.mean(p))))
-        feats.append(np.concatenate([lbp, fft6, np.array([c1, c2], np.float32)], 0))
-    if len(feats) == 0:
-        feats = [np.zeros(18, np.float32)]
-    m = np.mean(np.stack(feats, 0), axis=0).reshape(1, -1)
-    return m
+def choose_thr_single(domain, typ):
+    if tamper_single_ok:
+        if "by_type" in THRS_TP and typ in THRS_TP["by_type"]:
+            return THRS_TP["by_type"][typ]
+        if "by_domain" in THRS_TP and domain in THRS_TP["by_domain"]:
+            return THRS_TP["by_domain"][domain]
+        return THRS_TP.get("global", 0.5)
+    return 0.5
 
-def choose_thr_image(domain):
-    if not tamper_image_ok:
-        return 0.5
-    thr = THR_IMG.get("global", 0.5)
-    byd = THR_IMG.get("by_domain", {})
-    return byd.get(domain, thr)
+def image_score_topk(patch_probs, frac=TOPK):
+    n = len(patch_probs); k = max(1, int(math.ceil(frac * n)))
+    top = np.sort(np.asarray(patch_probs))[-k:]
+    return float(np.mean(top))
 
-def infer_tamper_image_from_residual(residual, domain):
-    if not tamper_image_ok:
-        return 0, 0.0, 0.5
-    x = sc_img.transform(image_feat_mean(residual))
-    p = float(clf_img.predict_proba(x)[0, 1])
-    thr = choose_thr_image(domain)
-    tampered = int(p >= thr)
-    return tampered, p, thr
+def infer_tamper_single_from_residual(residual, domain, typ_hint):
+    if not tamper_single_ok:
+        return 0, 0.0, 0.5, 0
+    patches = extract_patches(residual, limit=MAX_PATCHES, seed=123)
+    feats = np.stack([make_feat_vector(p) for p in patches], 0)
+    feats = sc_tp.transform(feats)
+    p_patch = clf_tp.predict_proba(feats)[:, 1]
+    p_img = image_score_topk(p_patch, frac=TOPK)
+    thr = choose_thr_single(domain, (typ_hint or "unknown"))
+    if domain == "orig_pdf_tif":
+        thr = min(1.0, thr + 0.03)
+    hits = int((p_patch >= HIT_THR).sum())
+    tampered = int((p_img >= thr) and (hits >= MIN_HITS))
+    if domain == "orig_pdf_tif":
+        tampered = 0
+    return tampered, p_img, thr, hits
 
-# ---------------- Paired tamper (optional) ----------------
+# ---------------- Paired tamper ----------------
 tamper_pair_ok = True
 try:
     with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
@@ -241,22 +281,6 @@ def build_orig_index():
 
 orig_map = build_orig_index()
 
-# ---------------- Domain/type inference ----------------
-def infer_domain_and_type_from_path_or_name(path_or_name: str):
-    p = path_or_name.replace("\\", "/").lower()
-    if "/adobescan/" in p or "/geniusscan/" in p or "/tinyscanner/" in p:
-        return "mobile_scan", None
-    if "/tampered images/original/" in p: return "orig_pdf_tif", None
-    if "/originals_tif/official/" in p:    return "orig_pdf_tif", None
-    if "/originals_tif/wikipedia/" in p:   return "orig_pdf_tif", None
-    if "/tampered images/tampered/copy-move/" in p: return "tamper_dir", "copy-move"
-    if "/tampered images/tampered/retouching/" in p: return "tamper_dir", "retouch"
-    if "/tampered images/tampered/splicing/" in p:   return "tamper_dir", "splice"
-    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "splice"
-    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "copy-move"
-    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
-    return "orig_pdf_tif", None
-
 def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     if not tamper_pair_ok or not clean_path:
         return 0, 0.0, 0.5, 0
@@ -267,27 +291,6 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     n = min(len(patches1), len(patches2))
     Xd = []
     for i in range(n):
-        # reuse scanner patch features (lbp+fft+residual_stats+fft_resample) for compatibility
-        def residual_stats(img):
-            return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], dtype=np.float32)
-        def fft_resample_feats(img):
-            f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
-            h, w = mag.shape; cy, cx = h // 2, w // 2
-            yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
-            rmax = r.max() + 1e-6
-            b1 = (r >= 0.25 * rmax) & (r < 0.35 * rmax)
-            b2 = (r >= 0.35 * rmax) & (r < 0.50 * rmax)
-            e1 = float(mag[b1].mean() if b1.any() else 0.0)
-            e2 = float(mag[b2].mean() if b2.any() else 0.0)
-            ratio = float(e2 / (e1 + 1e-8))
-            return np.asarray([e1, e2, ratio], dtype=np.float32)
-        def make_feat_vector(img_patch):
-            lbp = lbp_hist_safe(img_patch, 8, 1.0)
-            fft6 = fft_radial_energy(img_patch, 6)
-            res3 = residual_stats(img_patch)
-            rsp3 = fft_resample_feats(img_patch)
-            return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
-
         f1 = make_feat_vector(patches1[i])
         f2 = make_feat_vector(patches2[i])
         Xd.append(f2 - f1)
@@ -296,12 +299,28 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     p_patch = pair_clf.predict_proba(Xd_s)[:, 1]
     typ = (typ_hint or "unknown").lower()
     thr_base = THR_PAIR.get("by_type", {}).get(typ, THR_PAIR.get("global", 0.5))
-    n = len(p_patch); k = max(1, int(math.ceil(0.30 * n)))
+    thr_eff = max(thr_base - 0.02, 0.0)
+    frac_use = 0.20 if typ == "retouch" else 0.30
+    n = len(p_patch); k = max(1, int(math.ceil(frac_use * n)))
     top_idx = np.argsort(p_patch)[-k:]
     p_img = float(np.mean(p_patch[top_idx]))
-    hits = int(np.sum(p_patch[top_idx] >= 0.80))
-    ok = (p_img >= thr_base) and (hits >= 2)
-    return int(ok), p_img, thr_base, hits
+    def hits_topk(gate): return int(np.sum(p_patch[top_idx] >= gate))
+    if typ == "copy-move":
+        local_gate = 0.78
+        hits = hits_topk(local_gate)
+        ok = (p_img >= (thr_eff - 0.05)) or ((p_img >= thr_eff) and (hits >= 2))
+        thr_used = thr_eff - 0.05
+    elif typ == "retouch":
+        local_gate = 0.75
+        hits = hits_topk(local_gate)
+        ok = (p_img >= 0.60) or ((p_img >= max(thr_eff, 0.65)) and (hits >= 2))
+        thr_used = 0.60
+    else:
+        local_gate = 0.80
+        hits = hits_topk(local_gate)
+        ok = (p_img >= thr_base) and (hits >= 2)
+        thr_used = thr_base
+    return int(ok), p_img, thr_used, hits
 
 # ---------------- UI ----------------
 st.write("")
@@ -316,6 +335,7 @@ def safe_show_image(img_bgr):
     try:
         st.image(rgb, use_container_width=True)
     except TypeError:
+        # Older Streamlit builds don�t accept the kwarg
         st.image(rgb)
 
 if uploaded:
@@ -326,18 +346,15 @@ if uploaded:
         # Scanner ID
         s_lab, s_conf = try_scanner_predict(residual)
 
-        # Tamper pipeline (prefer paired if matching clean exists)
+        # Tamper pipeline
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
-        pid = re.search(r"(s\d+_\d+)", display_name)
-        pid = pid.group(1) if pid else None
-
-        if pid and (pid in (orig_map or {})):
+        pid = pid_from_name(display_name)
+        if pid and (pid in orig_map):
             domain = "orig_pdf_tif"
             typ_hint = None
             is_t, p_img, thr_used, hits = paired_infer_type_aware(orig_map[pid], residual, typ_hint)
         else:
-            is_t, p_img, thr_used = infer_tamper_image_from_residual(residual, domain)
-            hits = 0
+            is_t, p_img, thr_used, hits = infer_tamper_single_from_residual(residual, domain, typ_hint)
 
         verdict = "Tampered" if is_t else "Clean"
 
@@ -354,7 +371,6 @@ if uploaded:
                     <hr style='border:none;border-top:1px solid #2a2f3a;margin:12px 0;'>
                     <div style='font-size:16px;color:#9aa4b2;'>Tamper verdict</div>
                     <div style='font-size:20px;margin-top:4px;'>{verdict}</div>
-                    <div style='font-size:12px;color:#9aa4b2;margin-top:8px;'>p={p_img:.3f} · thr={thr_used:.3f} · domain={domain} · hits={hits}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -367,3 +383,5 @@ if uploaded:
         st.code(traceback.format_exc())
 else:
     st.info("Drag-and-drop a TIF/TIFF/PNG/JPG/JPEG/PDF to analyze.")
+ 
+
