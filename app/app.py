@@ -7,6 +7,7 @@ import streamlit as st
 import cv2, pywt
 from PIL import Image
 from skimage.feature import local_binary_pattern as sk_lbp
+import tensorflow as tf
 
 APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
@@ -23,6 +24,7 @@ TAMP_ROOT = ART_SCN / "Tampered images"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
+# ---------- IO helpers ----------
 def decode_upload_to_bgr(uploaded):
     try: uploaded.seek(0)
     except Exception: pass
@@ -46,12 +48,12 @@ def decode_upload_to_bgr(uploaded):
 def load_to_residual_from_bgr(bgr):
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) if bgr.ndim == 3 else bgr
     gray = cv2.resize(gray, IMG_SIZE, interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
-    cA,(cH,cV,cD) = pywt.dwt2(gray, "haar"); cH.fill(0); cV.fill(0); cD.fill(0)
-    den = pywt.idwt2((cA,(cH,cV,cD)), "haar")
+    cA,(cH,cV,cD)=pywt.dwt2(gray,"haar"); cH.fill(0); cV.fill(0); cD.fill(0)
+    den=pywt.idwt2((cA,(cH,cV,cD)),"haar")
     return (gray - den).astype(np.float32)
 
 def extract_patches(res, patch=PATCH, stride=STRIDE, limit=MAX_PATCHES, seed=42):
-    H,W = res.shape
+    H,W=res.shape
     ys=list(range(0,H-patch+1,stride)); xs=list(range(0,W-patch+1,stride))
     coords=[(y,x) for y in ys for x in xs]
     rng=np.random.RandomState(seed); rng.shuffle(coords)
@@ -70,57 +72,54 @@ def lbp_hist_safe(img, P=8, R=1.0):
 def fft_radial_energy(img, K=6):
     f=np.fft.fftshift(np.fft.fft2(img)); mag=np.abs(f)
     h,w=mag.shape; cy,cx=h//2,w//2
-    yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy-cy)**2+(xx-cx)**2)
+    yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)**2 + (xx - cx)**2)
     bins=np.linspace(0, r.max()+1e-6, K+1)
     feats=[]
     for i in range(K):
         m=(r>=bins[i])&(r<bins[i+1]); feats.append(float(mag[m].mean() if m.any() else 0.0))
-    return np.asarray(feats,dtype=np.float32)
+    return np.asarray(feats, dtype=np.float32)
 
-# ------------ Scanner-ID: Lock a consistent stack (model+fps+keys+scaler) ------------
-import tensorflow as tf
-
-def _load_keras():
-    # Try 14-class first, fallback to legacy
-    for cand in [ART_SCN/"scanner_hybrid_14.keras",
-                 ART_SCN/"scanner_hybrid.keras",
-                 ART_SCN/"scanner_hybrid.h5",
-                 ART_SCN/"scanner_hybrid"]:
-        if cand.exists():
-            return tf.keras.models.load_model(str(cand)), cand.name
+# ---------- Scanner-ID: auto-match consistent stack ----------
+def load_scanner_model():
+    for p in [ART_SCN/"scanner_hybrid_14.keras", ART_SCN/"scanner_hybrid.keras", ART_SCN/"scanner_hybrid.h5", ART_SCN/"scanner_hybrid"]:
+        if p.exists():
+            return tf.keras.models.load_model(str(p)), p.name
     return None, None
 
-def _match_scanner_set():
-    # Return a dict with le, sc, fps, keys where sc.n_features_in_ == len(keys)+6+10
+def lock_scanner_stack():
+    # Verify scaler features == len(fp_keys)+6+10
+    sc_path = ART_SCN/"hybrid_feat_scaler.pkl"
     le_candidates = [ART_SCN/"hybrid_label_encoder.pkl", ART_SCN/"hybrid_label_encoder (1).pkl"]
-    fps_keys_sets = [
+    with open(sc_path,"rb") as f: sc = pickle.load(f)
+    le = None
+    for lep in le_candidates:
+        if lep.exists():
+            with open(lep,"rb") as f: le = pickle.load(f); break
+    if le is None: raise FileNotFoundError("hybrid_label_encoder.pkl not found in app/models")
+
+    sets = [
         (ART_SCN/"scanner_fingerprints_14.pkl", ART_SCN/"fp_keys_14.npy", "14"),
         (ART_SCN/"scanner_fingerprints.pkl",    ART_SCN/"fp_keys.npy",    "legacy"),
     ]
-    # Load scaler once
-    sc = pickle.load(open(ART_SCN/"hybrid_feat_scaler.pkl","rb"))
-    for fps_path, keys_path, tag in fps_keys_sets:
+    for fps_path, keys_path, tag in sets:
         if not fps_path.exists() or not keys_path.exists(): continue
-        le_path = next((p for p in le_candidates if p.exists()), None)
-        if not le_path: continue
-        le = pickle.load(open(le_path,"rb"))
-        fps = pickle.load(open(fps_path,"rb"))
+        with open(fps_path,"rb") as f: fps = pickle.load(f)
         keys = np.load(keys_path, allow_pickle=True).tolist()
         expected = len(keys) + 6 + 10
-        if getattr(sc, "n_features_in_", None) == expected:
+        if getattr(sc,"n_features_in_",None) == expected:
             return dict(le=le, sc=sc, fps=fps, keys=keys, tag=tag)
-    raise RuntimeError("Scanner artifacts mismatch: scaler features do not match fp_keys length.")
+    raise RuntimeError("No matching scanner stack: scaler features do not match fp_keys length.")
 
-hyb_model, model_name = _load_keras()
+hyb_model, model_name = load_scanner_model()
 scanner_ready = hyb_model is not None
-scanner_err = None if scanner_ready else "No scanner_hybrid(.keras) file found under app/models."
+scanner_err = None if scanner_ready else "No scanner_hybrid(.keras) found under app/models."
 
 try:
-    sel = _match_scanner_set()
-    le_sc, sc_sc, scanner_fps, fp_keys = sel["le"], sel["sc"], sel["fps"], sel["keys"]
+    stk = lock_scanner_stack()
+    le_sc, sc_sc, scanner_fps, fp_keys = stk["le"], stk["sc"], stk["fps"], stk["keys"]
 except Exception as e:
     scanner_ready = False
-    scanner_err = f"{e}"
+    scanner_err = str(e)
 
 def corr2d(a,b):
     a=a.astype(np.float32).ravel(); b=b.astype(np.float32).ravel()
@@ -129,10 +128,10 @@ def corr2d(a,b):
     return float((a@b)/d) if d!=0 else 0.0
 
 def make_scanner_feats(res):
-    v_corr=[corr2d(res, scanner_fps[k]) for k in fp_keys]       # len(keys)
-    v_fft =fft_radial_energy(res,K=6).tolist()                  # 6
-    v_lbp =lbp_hist_safe(res,P=8,R=1.0).tolist()                # 10
-    v=np.array(v_corr+v_fft+v_lbp,dtype=np.float32).reshape(1,-1)
+    v_corr=[corr2d(res, scanner_fps[k]) for k in fp_keys]   # len(keys)
+    v_fft =fft_radial_energy(res,K=6).tolist()              # 6
+    v_lbp =lbp_hist_safe(res,P=8,R=1.0).tolist()            # 10
+    v=np.array(v_corr+v_fft+v_lbp, dtype=np.float32).reshape(1,-1)
     return sc_sc.transform(v)
 
 def try_scanner_predict(residual):
@@ -149,36 +148,36 @@ def try_scanner_predict(residual):
         st.warning(f"Scanner-ID inference error: {e}")
         return "Unknown", 0.0
 
-# ---------------- Image-level tamper ----------------
+# ---------- Image-level tamper ----------
 tamper_image_ok = True
 try:
     sc_img = pickle.load(open(ART_IMG/"image_scaler.pkl","rb"))
     clf_img = pickle.load(open(ART_IMG/"image_svm_sig.pkl","rb"))
-    thr_path = ART_IMG/"image_thresholds.json"
-    if not thr_path.exists(): thr_path = ART_IMG/"image_thresholds"
-    THR_IMG = json.load(open(thr_path,"r"))
+    thrp = ART_IMG/"image_thresholds.json"
+    if not thrp.exists(): thrp = ART_IMG/"image_thresholds"
+    THR_IMG = json.load(open(thrp,"r"))
 except Exception as e:
     tamper_image_ok = False
     st.info(f"Tamper (image-level) disabled: {e}")
 
 def image_feat_mean(res):
-    patches = extract_patches(res, limit=MAX_PATCHES, seed=111)
+    patches=extract_patches(res,limit=MAX_PATCHES,seed=111)
     feats=[]
     for p in patches:
         lbp=lbp_hist_safe(p,8,1.0); fft6=fft_radial_energy(p,6)
         c1=float(np.std(p)); c2=float(np.mean(np.abs(p - np.mean(p))))
-        feats.append(np.concatenate([lbp, fft6, np.array([c1,c2], np.float32)], 0))
-    if len(feats)==0: feats=[np.zeros(18, np.float32)]
-    return np.mean(np.stack(feats,0), axis=0).reshape(1,-1)
+        feats.append(np.concatenate([lbp,fft6,np.array([c1,c2],np.float32)],0))
+    if len(feats)==0: feats=[np.zeros(18,np.float32)]
+    return np.mean(np.stack(feats,0),axis=0).reshape(1,-1)
 
 def infer_tamper_image_from_residual(residual, domain):
     if not tamper_image_ok: return 0,0.0,0.5
-    x = sc_img.transform(image_feat_mean(residual))
-    p = float(clf_img.predict_proba(x)[0,1])
-    thr = THR_IMG.get("by_domain",{}).get(domain, THR_IMG.get("global",0.5))
+    x=sc_img.transform(image_feat_mean(residual))
+    p=float(clf_img.predict_proba(x)[0,1])
+    thr=THR_IMG.get("by_domain",{}).get(domain, THR_IMG.get("global",0.5))
     return int(p>=thr), p, thr
 
-# ---------------- Paired (optional) ----------------
+# ---------- Paired (optional) ----------
 tamper_pair_ok = True
 try:
     sc_pair  = pickle.load(open(ART_PAIR/"pair_scaler.pkl","rb"))
@@ -210,7 +209,7 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     def fft_resample_feats(img):
         f=np.fft.fftshift(np.fft.fft2(img)); mag=np.abs(f)
         h,w=mag.shape; cy,cx=h//2,w//2
-        yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy-cy)**2+(xx-cx)**2)
+        yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)**2+(xx - cx)**2)
         rmax=r.max()+1e-6; b1=(r>=0.25*rmax)&(r<0.35*rmax); b2=(r>=0.35*rmax)&(r<0.50*rmax)
         e1=float(mag[b1].mean() if b1.any() else 0.0); e2=float(mag[b2].mean() if b2.any() else 0.0)
         return np.asarray([e1,e2,float(e2/(e1+1e-8))], np.float32)

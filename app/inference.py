@@ -1,4 +1,5 @@
-﻿# inference.py (scanner-only helper with auto-match)
+﻿# inference.py
+
 import io, pickle, joblib, numpy as np, tensorflow as tf
 from pathlib import Path
 from PIL import Image
@@ -7,30 +8,29 @@ from app.utils.preprocess import preprocess_residual_from_array
 
 BASE = Path("app/models")
 
-def _load_model():
+def load_model():
     for p in [BASE/"scanner_hybrid_14.keras", BASE/"scanner_hybrid.keras", BASE/"scanner_hybrid.h5", BASE/"scanner_hybrid"]:
         if p.exists(): return tf.keras.models.load_model(str(p))
     raise FileNotFoundError("scanner_hybrid(.keras) not found")
 
-def _load_matched():
+def lock_stack():
     sc = joblib.load(BASE/"hybrid_feat_scaler.pkl")
     le = None
     for lep in [BASE/"hybrid_label_encoder.pkl", BASE/"hybrid_label_encoder (1).pkl"]:
         if lep.exists(): le = joblib.load(lep); break
     if le is None: raise FileNotFoundError("hybrid_label_encoder.pkl not found")
-    sets = [(BASE/"scanner_fingerprints_14.pkl", BASE/"fp_keys_14.npy"),
-            (BASE/"scanner_fingerprints.pkl",    BASE/"fp_keys.npy")]
-    for fpsp, keysp in sets:
+    for fpsp, keysp in [(BASE/"scanner_fingerprints_14.pkl", BASE/"fp_keys_14.npy"),
+                        (BASE/"scanner_fingerprints.pkl",    BASE/"fp_keys.npy")]:
         if fpsp.exists() and keysp.exists():
             with open(fpsp,"rb") as f: fps = pickle.load(f)
             keys = np.load(keysp, allow_pickle=True).tolist()
-            exp = len(keys)+6+10
-            if getattr(sc,"n_features_in_",None)==exp:
+            expected = len(keys)+6+10
+            if getattr(sc,"n_features_in_",None)==expected:
                 return le, sc, fps, keys
     raise RuntimeError("No matching scaler/fp_keys set found")
 
-hyb_model = _load_model()
-le_inf, scaler_inf, scanner_fps_inf, fp_keys_inf = _load_matched()
+hyb_model = load_model()
+le_inf, scaler_inf, scanner_fps_inf, fp_keys_inf = lock_stack()
 
 def corr2d(a,b):
     a=a.astype(np.float32).ravel(); b=b.astype(np.float32).ravel()
@@ -43,7 +43,7 @@ def fft_radial_energy(img, K=6):
     h,w=mag.shape; cy,cx=h//2,w//2
     yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy-cy)**2+(xx-cx)**2)
     bins=np.linspace(0, r.max()+1e-6, K+1)
-    return [float(np.abs(mag[(r>=bins[i])&(r<bins[i+1])]).mean() if np.any((r>=bins[i])&(r<bins[i+1])) else 0.0) for i in range(K)]
+    return [float(mag[(r>=bins[i])&(r<bins[i+1])].mean() if np.any((r>=bins[i])&(r<bins[i+1])) else 0.0) for i in range(K)]
 
 def lbp_hist_safe(img, P=8, R=1.0):
     rng=float(np.ptp(img))
@@ -68,4 +68,9 @@ def predict_from_bytes(img_bytes: bytes):
     x_ft  = make_feats_from_res(res)
     prob  = np.asarray(hyb_model.predict([x_img,x_ft], verbose=0)).ravel()
     idx   = int(np.argmax(prob))
-    return {"label": le_inf.classes_[idx], "confidence": float(prob[idx]*100.0)}
+    label = le_inf.classes_[idx]
+    conf  = float(prob[idx]*100.0)
+    # Return top3 as well
+    k = min(3, prob.size); top_idx = np.argpartition(prob, -k)[-k:]; top_idx = top_idx[np.argsort(prob[top_idx])[::-1]]
+    top3 = [(le_inf.classes_[i], float(prob[i]*100.0)) for i in top_idx]
+    return {"label": label, "confidence": conf, "top3": top3}
