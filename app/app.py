@@ -13,14 +13,14 @@ APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
 PATCH = 128
 STRIDE = 64
-MAX_PATCHES = 16  # used for scanner feats and image-level aggregation
+MAX_PATCHES = 16  # used for features and aggregation
 
 # ---------------- Paths (repo-relative) ----------------
 BASE_DIR = Path(__file__).resolve().parent
-ART_SCN = BASE_DIR / "models"
-ART_IMG = ART_SCN  # image-level artifacts live directly under models
-TAMP_ROOT = ART_SCN / "Tampered images"  # for paired originals
-ART_PAIR = ART_SCN / "artifacts_tamper_pair"
+ART_SCN = BASE_DIR / "models"                          # scanner artifacts
+ART_IMG = ART_SCN                                      # image-level tamper artifacts live directly under models
+ART_PAIR = ART_SCN / "artifacts_tamper_pair"           # paired tamper
+TAMP_ROOT = ART_SCN / "Tampered images"                # originals for pairing
 
 def must_exist(p: Path, kind="file"):
     if kind == "file" and not p.is_file():
@@ -112,14 +112,14 @@ def fft_radial_energy(img, K=6):
         feats.append(float(mag[m].mean() if m.any() else 0.0))
     return np.asarray(feats, dtype=np.float32)
 
-# ---------------- Scanner-ID (strict checks) ----------------
+# ---------------- Scanner-ID (14-class artifacts) ----------------
 hyb_model = None
 scanner_ready = False
 scanner_err = None
 try:
     import tensorflow as tf  # requires tensorflow-cpu in requirements
     cand = [ART_SCN / "scanner_hybrid_14.keras",
-            ART_SCN / "scanner_hybrid.keras",
+            ART_SCN / "scanner_hybrid.keras",   # fallback if 14 not present
             ART_SCN / "scanner_hybrid.h5",
             ART_SCN / "scanner_hybrid"]
     found = next((p for p in cand if p.exists()), None)
@@ -131,10 +131,18 @@ except Exception as e:
     scanner_err = f"TF model load failed: {e}"
 
 try:
-    LE_PATH = must_exist(ART_SCN / "hybrid_label_encoder.pkl")
+    # Prefer 14-class names; fall back to legacy if needed
+    LE_CAND = [ART_SCN / "hybrid_label_encoder.pkl", ART_SCN / "hybrid_label_encoder (1).pkl"]
     SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
-    FPS_PATH = must_exist(ART_SCN / "scanner_fingerprints_14.pkl")
-    FPK_PATH = must_exist(ART_SCN / "fp_keys_14.npy")
+    FPS_CAND = [ART_SCN / "scanner_fingerprints_14.pkl", ART_SCN / "scanner_fingerprints.pkl"]
+    FPK_CAND = [ART_SCN / "fp_keys_14.npy", ART_SCN / "fp_keys.npy"]
+
+    LE_PATH = next((p for p in LE_CAND if p.exists()), None)
+    FPS_PATH = next((p for p in FPS_CAND if p.exists()), None)
+    FPK_PATH = next((p for p in FPK_CAND if p.exists()), None)
+    if not LE_PATH or not FPS_PATH or not FPK_PATH:
+        raise FileNotFoundError("Required scanner artifacts not found (label encoder / fingerprints / fp_keys).")
+
     with open(LE_PATH, "rb") as f: le_sc = pickle.load(f)
     with open(SC_PATH, "rb") as f: sc_sc = pickle.load(f)
     with open(FPS_PATH, "rb") as f: fps = pickle.load(f)
@@ -156,7 +164,7 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
-    v_corr = [corr2d(res, fps[k]) for k in fp_keys]
+    v_corr = [corr2d(res, fps[k]) for k in fp_keys]  # length matches the selected fp_keys file (14-class if available)
     v_fft  = fft_radial_energy(res, K=6).tolist()
     v_lbp  = lbp_hist_safe(res, P=8, R=1.0).tolist()
     v = np.array(v_corr + v_fft + v_lbp, dtype=np.float32).reshape(1, -1)
@@ -178,12 +186,17 @@ def try_scanner_predict(residual):
         st.warning(f"Scanner-ID inference error: {e}")
         return "Unknown", 0.0
 
-# ---------------- Image-level tamper (single-image) ----------------
+# ---------------- Image-level tamper (preferred artifacts) ----------------
 tamper_image_ok = True
 try:
+    # You have these three files in models per your screenshot
     with must_exist(ART_IMG / "image_scaler.pkl").open("rb") as f: sc_img = pickle.load(f)
     with must_exist(ART_IMG / "image_svm_sig.pkl").open("rb") as f: clf_img = pickle.load(f)
-    with must_exist(ART_IMG / "image_thresholds.json").open("r") as f: THR_IMG = json.load(f)
+    # Some systems may name it "image_thresholds.json" or "image_thresholds"
+    THR_PATH = ART_IMG / "image_thresholds.json"
+    if not THR_PATH.exists():
+        THR_PATH = ART_IMG / "image_thresholds"
+    with THR_PATH.open("r") as f: THR_IMG = json.load(f)
 except Exception as e:
     tamper_image_ok = False
     st.info(f"Tamper (image-level) disabled: {e}")
@@ -194,7 +207,6 @@ def image_feat_mean(res):
     for p in patches:
         lbp = lbp_hist_safe(p, 8, 1.0)
         fft6 = fft_radial_energy(p, 6)
-        # contrast 2 dims
         c1 = float(np.std(p)); c2 = float(np.mean(np.abs(p - np.mean(p))))
         feats.append(np.concatenate([lbp, fft6, np.array([c1, c2], np.float32)], 0))
     if len(feats) == 0:
@@ -266,30 +278,22 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     patches2 = extract_patches(suspect_residual, limit=MAX_PATCHES, seed=777)
     n = min(len(patches1), len(patches2))
     Xd = []
+    def residual_stats(img):
+        return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], dtype=np.float32)
+    def fft_resample_feats(img):
+        f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
+        h, w = mag.shape; cy, cx = h//2, w//2
+        yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy)**2 + (xx - cx)**2)
+        rmax = r.max() + 1e-6
+        b1 = (r>=0.25*rmax) & (r<0.35*rmax)
+        b2 = (r>=0.35*rmax) & (r<0.50*rmax)
+        e1 = float(mag[b1].mean() if b1.any() else 0.0)
+        e2 = float(mag[b2].mean() if b2.any() else 0.0)
+        ratio = float(e2/(e1+1e-8))
+        return np.asarray([e1,e2,ratio], dtype=np.float32)
     for i in range(n):
-        # reuse scanner patch features (lbp+fft+residual_stats+fft_resample) for compatibility
-        def residual_stats(img):
-            return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], dtype=np.float32)
-        def fft_resample_feats(img):
-            f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
-            h, w = mag.shape; cy, cx = h // 2, w // 2
-            yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
-            rmax = r.max() + 1e-6
-            b1 = (r >= 0.25 * rmax) & (r < 0.35 * rmax)
-            b2 = (r >= 0.35 * rmax) & (r < 0.50 * rmax)
-            e1 = float(mag[b1].mean() if b1.any() else 0.0)
-            e2 = float(mag[b2].mean() if b2.any() else 0.0)
-            ratio = float(e2 / (e1 + 1e-8))
-            return np.asarray([e1, e2, ratio], dtype=np.float32)
-        def make_feat_vector(img_patch):
-            lbp = lbp_hist_safe(img_patch, 8, 1.0)
-            fft6 = fft_radial_energy(img_patch, 6)
-            res3 = residual_stats(img_patch)
-            rsp3 = fft_resample_feats(img_patch)
-            return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
-
-        f1 = make_feat_vector(patches1[i])
-        f2 = make_feat_vector(patches2[i])
+        f1 = np.concatenate([lbp_hist_safe(patches1[i],8,1.0), fft_radial_energy(patches1[i],6), residual_stats(patches1[i]), fft_resample_feats(patches1[i])], 0)
+        f2 = np.concatenate([lbp_hist_safe(patches2[i],8,1.0), fft_radial_energy(patches2[i],6), residual_stats(patches2[i]), fft_resample_feats(patches2[i])], 0)
         Xd.append(f2 - f1)
     Xd = np.asarray(Xd, np.float32)
     Xd_s = sc_pair.transform(Xd)
@@ -314,7 +318,7 @@ uploaded = st.file_uploader(
 def safe_show_image(img_bgr):
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     try:
-        st.image(rgb, use_container_width=True)
+        st.image(rgb, width="stretch")   # deprecation fix
     except TypeError:
         st.image(rgb)
 
@@ -323,10 +327,10 @@ if uploaded:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Scanner ID
+        # Scanner ID (14-class if files present)
         s_lab, s_conf = try_scanner_predict(residual)
 
-        # Tamper pipeline (prefer paired if matching clean exists)
+        # Tamper pipeline: prefer paired if original exists; otherwise image-level
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
         pid = re.search(r"(s\d+_\d+)", display_name)
         pid = pid.group(1) if pid else None
