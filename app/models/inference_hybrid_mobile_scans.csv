@@ -1,0 +1,181 @@
+path,pred_label,conf_pct,top3_labels,top3_conf
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025 (1)_1.jpg,Canon120-1,85.46,Canon120-1;Canon120-2;EpsonV39-2,85.46;7.62;5.81
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_1.jpg,Canon120-1,78.48,Canon120-1;Canon120-2;EpsonV39-2,78.48;21.31;0.18
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_10.jpg,Canon120-1,60.02,Canon120-1;Canon120-2;Canon220,60.02;39.93;0.05
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_11.jpg,Canon120-2,86.89,Canon120-2;Canon220;Canon120-1,86.89;11.06;1.62
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_12.jpg,Canon220,58.79,Canon220;Canon120-2;Canon120-1,58.79;38.36;2.84
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_13.jpg,Canon120-2,66.15,Canon120-2;Canon120-1;Canon220,66.15;24.87;8.98
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_14.jpg,Canon120-2,71.27,Canon120-2;Canon120-1;Canon220,71.27;12.08;11.90
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_15.jpg,Canon120-1,56.21,Canon120-1;Canon120-2;Canon220,56.21;43.70;0.08
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_16.jpg,Canon120-2,50.11,Canon120-2;Canon120-1;EpsonV39-2,50.11;49.13;0.63
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_17.jpg,Canon120-1,85.80,Canon120-1;Canon120-2;EpsonV370-1,85.80;13.58;0.27
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_18.jpg,Canon120-1,72.07,Canon120-1;Canon120-2;EpsonV39-2,72.07;26.64;0.62
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_19.jpg,Canon120-1,59.77,Canon120-1;Canon120-2;EpsonV39-2,59.77;38.27;1.61
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_2.jpg,Canon120-1,48.27,Canon120-1;EpsonV39-2;Canon120-2,48.27;37.24;12.80
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_20.jpg,Canon120-2,37.34,Canon120-2;Canon120-1;EpsonV39-2,37.34;36.57;25.23
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_21.jpg,Canon120-2,98.76,Canon120-2;Canon120-1;EpsonV370-2,98.76;0.67;0.37
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_22.jpg,Canon120-1,70.02,Canon120-1;Canon120-2;Canon220,70.02;28.87;1.11
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_23.jpg,Canon120-1,98.26,Canon120-1;Canon120-2;Canon9000-1,98.26;1.44;0.18
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_24.jpg,Canon120-2,64.88,Canon120-2;Canon120-1;EpsonV39-2,64.88;34.65;0.22
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_25.jpg,Canon120-1,54.58,Canon120-1;Canon120-2;EpsonV39-2,54.58;41.77;2.87
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_26.jpg,EpsonV39-2,51.15,EpsonV39-2;EpsonV39-1;Canon120-1,51.15;31.26;10.76
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_27.jpg,EpsonV39-2,86.36,EpsonV39-2;Canon120-1;EpsonV370-2,86.36;7.28;3.21
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_28.jpg,Canon120-1,74.90,Canon120-1;EpsonV39-2;Canon120-2,74.90;22.39;2.67
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_29.jpg,Canon120-1,54.16,Canon120-1;EpsonV39-2;Canon120-2,54.16;29.54;13.86
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_3.jpg,Canon120-1,75.11,Canon120-1;Canon120-2;EpsonV39-2,75.11;12.00;10.38
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_30.jpg,Canon120-1,98.28,Canon120-1;Canon120-2;EpsonV39-2,98.28;1.11;0.60
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_31.jpg,EpsonV370-1,63.33,EpsonV370-1;Canon120-1;Canon120-2,63.33;29.23;5.55
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_32.jpg,Canon120-1,73.01,Canon120-1;Canon120-2;EpsonV39-2,73.01;17.75;8.89
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_33.jpg,Canon120-1,89.01,Canon120-1;Canon120-2;Canon9000-1,89.01;6.22;4.71
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_34.jpg,Canon120-1,91.37,Canon120-1;Canon120-2;EpsonV39-2,91.37;5.96;1.29
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_35.jpg,EpsonV39-2,32.77,EpsonV39-2;Canon120-1;EpsonV370-2,32.77;31.11;15.89
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_36.jpg,Canon120-2,86.75,Canon120-2;Canon220;EpsonV370-2,86.75;4.78;3.96
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_37.jpg,Canon120-1,45.64,Canon120-1;Canon120-2;EpsonV370-2,45.64;43.74;7.38
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_38.jpg,EpsonV39-2,57.50,EpsonV39-2;EpsonV370-2;EpsonV39-1,57.50;14.21;13.71
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_39.jpg,Canon120-1,58.61,Canon120-1;Canon120-2;Canon220,58.61;41.13;0.25
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_4.jpg,Canon120-2,54.59,Canon120-2;Canon220;Canon120-1,54.59;37.14;7.19
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_40.jpg,Canon120-1,85.80,Canon120-1;Canon220;Canon120-2,85.80;9.84;4.34
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_41.jpg,Canon120-1,98.33,Canon120-1;EpsonV39-2;Canon120-2,98.33;0.86;0.78
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_42.jpg,Canon120-1,65.64,Canon120-1;Canon120-2;EpsonV39-2,65.64;33.75;0.51
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_43.jpg,Canon120-2,95.24,Canon120-2;Canon120-1;Canon220,95.24;3.75;0.99
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_44.jpg,EpsonV39-1,66.55,EpsonV39-1;Canon120-2;EpsonV39-2,66.55;29.31;2.18
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_45.jpg,Canon220,59.44,Canon220;Canon120-2;Canon120-1,59.44;35.46;5.10
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_46.jpg,Canon120-2,66.21,Canon120-2;Canon220;Canon120-1,66.21;17.59;16.08
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_47.jpg,Canon120-1,90.24,Canon120-1;Canon120-2;EpsonV39-2,90.24;7.40;1.38
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_48.jpg,Canon120-2,47.19,Canon120-2;Canon120-1;EpsonV370-2,47.19;44.28;7.43
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_49.jpg,Canon120-2,59.92,Canon120-2;Canon120-1;EpsonV370-2,59.92;37.60;1.42
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_5.jpg,Canon120-2,85.70,Canon120-2;Canon120-1;Canon220,85.70;12.18;2.11
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_50.jpg,Canon120-1,52.85,Canon120-1;Canon120-2;EpsonV370-2,52.85;35.31;10.91
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_51.jpg,Canon120-2,52.14,Canon120-2;Canon220;EpsonV370-2,52.14;45.55;1.21
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_52.jpg,Canon120-2,40.54,Canon120-2;Canon120-1;EpsonV370-2,40.54;40.46;17.00
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_53.jpg,Canon120-2,87.90,Canon120-2;Canon120-1;Canon220,87.90;8.29;2.42
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_54.jpg,Canon120-2,94.76,Canon120-2;Canon220;Canon120-1,94.76;2.59;2.50
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_55.jpg,Canon120-1,86.04,Canon120-1;Canon120-2;EpsonV39-2,86.04;13.55;0.24
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_56.jpg,Canon120-1,92.21,Canon120-1;Canon120-2;EpsonV39-2,92.21;7.28;0.46
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_57.jpg,Canon120-1,79.30,Canon120-1;EpsonV39-2;Canon120-2,79.30;16.12;3.36
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_58.jpg,EpsonV370-1,74.63,EpsonV370-1;Canon120-1;Canon120-2,74.63;18.02;6.97
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_59.jpg,Canon120-1,81.40,Canon120-1;Canon120-2;Canon9000-1,81.40;18.58;0.00
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_6.jpg,Canon120-2,82.06,Canon120-2;Canon120-1;Canon220,82.06;9.69;8.25
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_7.jpg,Canon120-2,81.42,Canon120-2;Canon120-1;Canon220,81.42;16.68;1.90
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_8.jpg,Canon220,46.91,Canon220;Canon120-2;Canon120-1,46.91;38.80;14.29
+/content/drive/MyDrive/Objective1/AdobeScan/Adobe Scan 01 Oct 2025_9.jpg,Canon120-2,58.85,Canon120-2;Canon120-1;EpsonV370-2,58.85;33.20;6.07
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_1.jpg,Canon120-1,96.88,Canon120-1;Canon120-2;Canon9000-2,96.88;2.87;0.16
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_10.jpg,Canon120-1,92.55,Canon120-1;Canon120-2;Canon9000-2,92.55;7.41;0.02
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_11.jpg,Canon120-1,85.19,Canon120-1;Canon120-2;Canon9000-1,85.19;12.21;1.91
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_12.jpg,Canon120-2,63.10,Canon120-2;Canon120-1;Canon9000-1,63.10;28.15;8.70
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_13.jpg,Canon120-1,67.90,Canon120-1;Canon120-2;EpsonV39-2,67.90;31.84;0.14
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_14.jpg,Canon120-1,56.41,Canon120-1;Canon120-2;Canon9000-1,56.41;42.51;1.04
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_15.jpg,Canon120-1,83.09,Canon120-1;Canon120-2;Canon9000-1,83.09;16.23;0.43
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_16.jpg,Canon120-1,76.85,Canon120-1;Canon120-2;Canon9000-1,76.85;22.90;0.15
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_17.jpg,Canon120-2,94.89,Canon120-2;Canon120-1;Canon220,94.89;3.93;1.16
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_18.jpg,Canon120-1,59.10,Canon120-1;Canon120-2;EpsonV39-2,59.10;39.14;1.39
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_19.jpg,Canon120-1,96.58,Canon120-1;Canon9000-2;Canon9000-1,96.58;2.86;0.29
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_2.jpg,Canon120-1,86.08,Canon120-1;Canon120-2;Canon9000-1,86.08;12.88;0.83
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_20.jpg,Canon120-1,79.61,Canon120-1;Canon120-2;EpsonV39-2,79.61;19.98;0.36
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_21.jpg,Canon120-1,99.30,Canon120-1;Canon120-2;Canon9000-2,99.30;0.61;0.05
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_22.jpg,Canon120-1,98.71,Canon120-1;Canon120-2;Canon9000-2,98.71;0.87;0.24
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_23.jpg,Canon120-1,81.87,Canon120-1;Canon120-2;Canon9000-1,81.87;16.01;1.80
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_24.jpg,Canon120-1,74.13,Canon120-1;Canon120-2;EpsonV39-2,74.13;25.44;0.31
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_25.jpg,Canon120-2,51.47,Canon120-2;Canon120-1;EpsonV39-2,51.47;48.37;0.06
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_26.jpg,Canon120-2,74.92,Canon120-2;Canon120-1;Canon220,74.92;24.98;0.06
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_27.jpg,Canon120-2,67.94,Canon120-2;Canon120-1;EpsonV39-2,67.94;31.21;0.33
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_28.jpg,Canon120-1,56.49,Canon120-1;Canon120-2;EpsonV39-2,56.49;43.42;0.03
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_29.jpg,Canon120-2,56.47,Canon120-2;Canon120-1;Canon9000-1,56.47;41.64;1.80
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_3.jpg,Canon120-2,71.86,Canon120-2;Canon120-1;Canon9000-1,71.86;27.62;0.42
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_30.jpg,Canon120-2,64.67,Canon120-2;Canon120-1;Canon220,64.67;34.99;0.30
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_31.jpg,Canon120-2,61.95,Canon120-2;Canon120-1;Canon220,61.95;37.94;0.06
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_32.jpg,Canon120-1,90.40,Canon120-1;EpsonV39-2;Canon120-2,90.40;5.87;3.60
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_33.jpg,Canon120-1,89.99,Canon120-1;Canon120-2;Canon9000-1,89.99;7.35;2.16
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_34.jpg,Canon120-1,84.14,Canon120-1;Canon120-2;EpsonV39-2,84.14;14.84;0.88
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_35.jpg,Canon120-1,67.89,Canon120-1;Canon120-2;Canon9000-1,67.89;29.00;2.33
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_36.jpg,Canon120-2,55.52,Canon120-2;Canon120-1;EpsonV39-2,55.52;44.22;0.20
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_37.jpg,Canon120-1,67.49,Canon120-1;Canon120-2;Canon9000-1,67.49;29.89;2.42
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_38.jpg,Canon120-1,90.99,Canon120-1;Canon120-2;EpsonV39-2,90.99;8.95;0.03
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_39.jpg,Canon120-2,74.68,Canon120-2;Canon120-1;EpsonV370-2,74.68;25.25;0.03
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_4.jpg,Canon120-2,56.44,Canon120-2;Canon120-1;EpsonV39-2,56.44;41.56;0.67
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_40.jpg,Canon120-1,96.22,Canon120-1;Canon120-2;Canon9000-2,96.22;2.72;0.63
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_41.jpg,Canon120-1,79.03,Canon120-1;Canon120-2;Canon9000-1,79.03;13.40;7.13
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_42.jpg,Canon120-1,89.92,Canon120-1;Canon120-2;EpsonV39-2,89.92;9.33;0.66
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_43.jpg,Canon120-1,49.19,Canon120-1;EpsonV39-2;Canon120-2,49.19;32.61;10.70
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_44.jpg,Canon120-2,55.38,Canon120-2;Canon120-1;EpsonV39-2,55.38;44.35;0.14
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_45.jpg,Canon120-1,86.53,Canon120-1;Canon120-2;EpsonV39-2,86.53;12.41;0.92
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_46.jpg,Canon120-2,86.27,Canon120-2;Canon120-1;Canon9000-1,86.27;13.48;0.23
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_47.jpg,Canon120-2,74.27,Canon120-2;Canon120-1;Canon9000-1,74.27;25.63;0.08
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_48.jpg,Canon120-1,83.66,Canon120-1;Canon120-2;EpsonV39-2,83.66;9.71;6.31
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_49.jpg,Canon120-1,96.25,Canon120-1;Canon120-2;Canon9000-2,96.25;3.45;0.15
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_5.jpg,Canon120-1,90.64,Canon120-1;Canon120-2;Canon9000-2,90.64;8.56;0.36
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_50.jpg,Canon120-1,65.53,Canon120-1;Canon9000-1;Canon120-2,65.53;20.48;13.33
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_51.jpg,Canon120-1,65.45,Canon120-1;Canon120-2;Canon9000-1,65.45;34.26;0.19
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_52.jpg,Canon120-1,61.84,Canon120-1;Canon120-2;EpsonV39-2,61.84;36.51;1.22
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_53.jpg,Canon120-1,47.22,Canon120-1;Canon120-2;EpsonV39-2,47.22;45.53;3.88
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_54.jpg,Canon120-1,98.45,Canon120-1;Canon120-2;Canon9000-2,98.45;0.77;0.45
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_55.jpg,Canon120-1,69.57,Canon120-1;Canon120-2;EpsonV39-2,69.57;27.59;1.80
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_56.jpg,Canon120-1,87.61,Canon120-1;Canon120-2;EpsonV39-2,87.61;11.66;0.59
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_57.jpg,Canon120-1,76.90,Canon120-1;Canon120-2;Canon9000-1,76.90;19.09;2.51
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_58.jpg,Canon120-2,39.44,Canon120-2;Canon120-1;EpsonV39-2,39.44;39.28;19.84
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_59.jpg,Canon120-1,96.36,Canon120-1;EpsonV39-2;Canon9000-2,96.36;1.46;1.14
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_6.jpg,Canon120-1,77.83,Canon120-1;Canon120-2;Canon9000-2,77.83;21.79;0.12
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_60.jpg,Canon120-1,60.79,Canon120-1;Canon120-2;Canon220,60.79;38.84;0.13
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_7.jpg,Canon120-1,78.81,Canon120-1;EpsonV39-2;Canon120-2,78.81;13.49;7.01
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_8.jpg,Canon120-1,94.01,Canon120-1;Canon120-2;EpsonV39-2,94.01;4.76;0.74
+/content/drive/MyDrive/Objective1/GeniusScan/2025-10-01 20-41_page_9.jpg,Canon120-1,88.34,Canon120-1;Canon120-2;Canon9000-1,88.34;11.46;0.13
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f73 (1).jpg,HP,56.93,HP;EpsonV370-1;Canon120-1,56.93;41.67;1.05
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f73.jpg,HP,56.93,HP;EpsonV370-1;Canon120-1,56.93;41.67;1.05
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f74.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f75.jpg,HP,98.45,HP;EpsonV370-1;Canon9000-2,98.45;1.53;0.02
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f76.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f77.jpg,HP,99.98,HP;EpsonV370-1;EpsonV370-2,99.98;0.01;0.01
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f78.jpg,HP,100.00,HP;Canon120-1;EpsonV39-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f79.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7a.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7b.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7c.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7d.jpg,HP,97.70,HP;EpsonV370-1;EpsonV370-2,97.70;1.55;0.56
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7e.jpg,HP,100.00,HP;EpsonV370-2;EpsonV550,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f7f.jpg,HP,99.99,HP;EpsonV370-2;EpsonV550,99.99;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f80.jpg,HP,99.99,HP;EpsonV550;EpsonV370-2,99.99;0.01;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f81.jpg,HP,99.99,HP;EpsonV370-2;EpsonV370-1,99.99;0.01;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f82.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f83.jpg,HP,52.48,HP;EpsonV370-1;Canon9000-1,52.48;45.80;1.41
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f84.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f85.jpg,HP,99.99,HP;EpsonV370-2;EpsonV370-1,99.99;0.01;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f86.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f87.jpg,HP,99.94,HP;EpsonV370-2;EpsonV370-1,99.94;0.04;0.01
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f88.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f89.jpg,HP,99.99,HP;EpsonV370-1;EpsonV370-2,99.99;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8a.jpg,HP,100.00,HP;EpsonV370-2;EpsonV39-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8b.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8c.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8d.jpg,HP,100.00,HP;EpsonV39-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8e.jpg,HP,99.89,HP;EpsonV370-1;EpsonV39-2,99.89;0.08;0.03
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f8f.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f90.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f92.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f93.jpg,HP,99.99,HP;EpsonV550;EpsonV370-2,99.99;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f94.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f95.jpg,HP,99.96,HP;EpsonV370-1;EpsonV370-2,99.96;0.02;0.01
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f96.jpg,HP,100.00,HP;EpsonV370-1;EpsonV39-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f97.jpg,HP,99.99,HP;EpsonV370-2;EpsonV550,99.99;0.01;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f98.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f99.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9a.jpg,HP,100.00,HP;EpsonV370-1;Canon120-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9b.jpg,HP,100.00,HP;EpsonV370-2;EpsonV39-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9c.jpg,HP,100.00,HP;EpsonV39-2;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9d.jpg,HP,99.86,HP;EpsonV370-1;EpsonV370-2,99.86;0.07;0.05
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9e.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2f9f.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa0.jpg,HP,99.56,HP;EpsonV370-2;EpsonV370-1,99.56;0.32;0.08
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa1.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa2.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa3.jpg,HP,99.87,HP;EpsonV370-2;EpsonV370-1,99.87;0.12;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa4.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa5.jpg,HP,100.00,HP;EpsonV370-2;Canon220,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa6.jpg,HP,99.87,HP;EpsonV370-2;EpsonV550,99.87;0.11;0.01
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa7.jpg,HP,100.00,HP;EpsonV39-2;EpsonV370-2,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa8.jpg,HP,100.00,HP;EpsonV370-2;EpsonV550,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fa9.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2faa.jpg,EpsonV370-1,98.51,EpsonV370-1;HP;Canon9000-1,98.51;1.48;0.01
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fab.jpg,HP,100.00,HP;EpsonV370-2;Canon220,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fac.jpg,HP,99.97,HP;EpsonV370-2;EpsonV550,99.97;0.03;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd4fd6e07f470673fc2fad.jpg,HP,100.00,HP;EpsonV370-2;EpsonV370-1,100.00;0.00;0.00
+/content/drive/MyDrive/Objective1/TinyScanner/68dd5038e07f470673fc2faf.jpg,HP,100.00,HP;EpsonV370-1;EpsonV370-2,100.00;0.00;0.00
