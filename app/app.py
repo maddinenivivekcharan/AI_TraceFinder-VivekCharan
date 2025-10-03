@@ -8,19 +8,17 @@ import cv2, pywt
 from PIL import Image
 from skimage.feature import local_binary_pattern as sk_lbp
 
-# ---------------- CONFIG ----------------
 APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
 PATCH = 128
 STRIDE = 64
-MAX_PATCHES = 16  # used for features and aggregation
+MAX_PATCHES = 16
 
-# ---------------- Paths (repo-relative) ----------------
 BASE_DIR = Path(__file__).resolve().parent
-ART_SCN = BASE_DIR / "models"                          # scanner artifacts
-ART_IMG = ART_SCN                                      # image-level tamper artifacts live directly under models
-ART_PAIR = ART_SCN / "artifacts_tamper_pair"           # paired tamper
-TAMP_ROOT = ART_SCN / "Tampered images"                # originals for pairing
+ART_SCN = BASE_DIR / "models"
+ART_IMG = ART_SCN
+ART_PAIR = ART_SCN / "artifacts_tamper_pair"
+TAMP_ROOT = ART_SCN / "Tampered images"
 
 def must_exist(p: Path, kind="file"):
     if kind == "file" and not p.is_file():
@@ -29,10 +27,10 @@ def must_exist(p: Path, kind="file"):
         raise FileNotFoundError(f"Missing required folder: {p}")
     return p
 
-# ---------------- PDF via PyMuPDF only ----------------
+# PDF
 PDF_BACKEND = "pymupdf"
 try:
-    import fitz  # PyMuPDF
+    import fitz
     PYMUPDF_AVAILABLE = True
 except Exception:
     PYMUPDF_AVAILABLE = False
@@ -52,11 +50,9 @@ def pdf_bytes_to_bgr(file_bytes: bytes):
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-# ---------------- Page ----------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
-# ---------------- Image utils ----------------
 def decode_upload_to_bgr(uploaded):
     try:
         uploaded.seek(0)
@@ -112,17 +108,18 @@ def fft_radial_energy(img, K=6):
         feats.append(float(mag[m].mean() if m.any() else 0.0))
     return np.asarray(feats, dtype=np.float32)
 
-# ---------------- Scanner-ID (14-class artifacts) ----------------
+# ---------- Scanner-ID: Robust artifact auto-selection (14-class vs legacy) ----------
 hyb_model = None
 scanner_ready = False
 scanner_err = None
 try:
-    import tensorflow as tf  # requires tensorflow-cpu in requirements
-    cand = [ART_SCN / "scanner_hybrid_14.keras",
-            ART_SCN / "scanner_hybrid.keras",   # fallback if 14 not present
-            ART_SCN / "scanner_hybrid.h5",
-            ART_SCN / "scanner_hybrid"]
-    found = next((p for p in cand if p.exists()), None)
+    import tensorflow as tf
+    # prefer 14, then legacy
+    SCN_CAND = [ART_SCN / "scanner_hybrid_14.keras",
+                ART_SCN / "scanner_hybrid.keras",
+                ART_SCN / "scanner_hybrid.h5",
+                ART_SCN / "scanner_hybrid"]
+    found = next((p for p in SCN_CAND if p.exists()), None)
     if found:
         hyb_model = tf.keras.models.load_model(str(found))
     else:
@@ -130,28 +127,36 @@ try:
 except Exception as e:
     scanner_err = f"TF model load failed: {e}"
 
+def load_scanner_artifacts_matched():
+    # Try 14-class set first
+    sets = [
+        dict(le=[ART_SCN / "hybrid_label_encoder.pkl", ART_SCN / "hybrid_label_encoder (1).pkl"],
+             fps=ART_SCN / "scanner_fingerprints_14.pkl",
+             keys=ART_SCN / "fp_keys_14.npy",
+             note="14"),
+        dict(le=[ART_SCN / "hybrid_label_encoder.pkl", ART_SCN / "hybrid_label_encoder (1).pkl"],
+             fps=ART_SCN / "scanner_fingerprints.pkl",
+             keys=ART_SCN / "fp_keys.npy",
+             note="legacy")
+    ]
+    for s in sets:
+        LE_PATH = next((p for p in s["le"] if p.exists()), None)
+        if not LE_PATH or (not s["fps"].exists()) or (not s["keys"].exists()):
+            continue
+        with open(LE_PATH, "rb") as f: le = pickle.load(f)
+        with open(ART_SCN / "hybrid_feat_scaler.pkl", "rb") as f: sc = pickle.load(f)
+        with open(s["fps"], "rb") as f: fps_local = pickle.load(f)
+        fp_keys_local = np.load(s["keys"], allow_pickle=True).tolist()
+        # Compute expected feature length
+        k = len(fp_keys_local)
+        expected = k + 6 + 10  # corr + fft + lbp
+        if hasattr(sc, "n_features_in_") and sc.n_features_in_ == expected:
+            return dict(le=le, sc=sc, fps=fps_local, keys=fp_keys_local, note=s["note"])
+    raise RuntimeError("No matching scanner scaler/fingerprint set found (feature length mismatch).")
+
 try:
-    # Prefer 14-class names; fall back to legacy if needed
-    LE_CAND = [ART_SCN / "hybrid_label_encoder.pkl", ART_SCN / "hybrid_label_encoder (1).pkl"]
-    SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
-    FPS_CAND = [ART_SCN / "scanner_fingerprints_14.pkl", ART_SCN / "scanner_fingerprints.pkl"]
-    FPK_CAND = [ART_SCN / "fp_keys_14.npy", ART_SCN / "fp_keys.npy"]
-
-    LE_PATH = next((p for p in LE_CAND if p.exists()), None)
-    FPS_PATH = next((p for p in FPS_CAND if p.exists()), None)
-    FPK_PATH = next((p for p in FPK_CAND if p.exists()), None)
-    if not LE_PATH or not FPS_PATH or not FPK_PATH:
-        raise FileNotFoundError("Required scanner artifacts not found (label encoder / fingerprints / fp_keys).")
-
-    with open(LE_PATH, "rb") as f: le_sc = pickle.load(f)
-    with open(SC_PATH, "rb") as f: sc_sc = pickle.load(f)
-    with open(FPS_PATH, "rb") as f: fps = pickle.load(f)
-    fp_keys = np.load(FPK_PATH, allow_pickle=True).tolist()
-    if not isinstance(fp_keys, (list, tuple)) or len(fp_keys) == 0:
-        raise ValueError("fp_keys empty or invalid")
-    if any(k not in fps for k in fp_keys):
-        missing = [k for k in fp_keys if k not in fps]
-        raise ValueError(f"Missing fingerprints for keys: {missing[:3]} ...")
+    sel = load_scanner_artifacts_matched()
+    le_sc, sc_sc, scanner_fps, fp_keys = sel["le"], sel["sc"], sel["fps"], sel["keys"]
     scanner_ready = (hyb_model is not None)
 except Exception as e:
     scanner_err = f"Scanner artifacts problem: {e}"
@@ -164,7 +169,7 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
-    v_corr = [corr2d(res, fps[k]) for k in fp_keys]  # length matches the selected fp_keys file (14-class if available)
+    v_corr = [corr2d(res, scanner_fps[k]) for k in fp_keys]
     v_fft  = fft_radial_energy(res, K=6).tolist()
     v_lbp  = lbp_hist_safe(res, P=8, R=1.0).tolist()
     v = np.array(v_corr + v_fft + v_lbp, dtype=np.float32).reshape(1, -1)
@@ -186,13 +191,11 @@ def try_scanner_predict(residual):
         st.warning(f"Scanner-ID inference error: {e}")
         return "Unknown", 0.0
 
-# ---------------- Image-level tamper (preferred artifacts) ----------------
+# ---------- Image-level tamper ----------
 tamper_image_ok = True
 try:
-    # You have these three files in models per your screenshot
     with must_exist(ART_IMG / "image_scaler.pkl").open("rb") as f: sc_img = pickle.load(f)
     with must_exist(ART_IMG / "image_svm_sig.pkl").open("rb") as f: clf_img = pickle.load(f)
-    # Some systems may name it "image_thresholds.json" or "image_thresholds"
     THR_PATH = ART_IMG / "image_thresholds.json"
     if not THR_PATH.exists():
         THR_PATH = ART_IMG / "image_thresholds"
@@ -230,7 +233,7 @@ def infer_tamper_image_from_residual(residual, domain):
     tampered = int(p >= thr)
     return tampered, p, thr
 
-# ---------------- Paired tamper (optional) ----------------
+# ---------- Paired tamper ----------
 tamper_pair_ok = True
 try:
     with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
@@ -253,7 +256,7 @@ def build_orig_index():
 
 orig_map = build_orig_index()
 
-# ---------------- Domain/type inference ----------------
+# ---------- Domain inference ----------
 def infer_domain_and_type_from_path_or_name(path_or_name: str):
     p = path_or_name.replace("\\", "/").lower()
     if "/adobescan/" in p or "/geniusscan/" in p or "/tinyscanner/" in p:
@@ -268,6 +271,21 @@ def infer_domain_and_type_from_path_or_name(path_or_name: str):
     if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "copy-move"
     if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
     return "orig_pdf_tif", None
+
+# ---------- UI ----------
+def safe_show_image(img_bgr):
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    try:
+        st.image(rgb, width="stretch")
+    except TypeError:
+        st.image(rgb)
+
+st.write("")
+uploaded = st.file_uploader(
+    "Upload scanned page",
+    type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"],
+    label_visibility="collapsed"
+)
 
 def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     if not tamper_pair_ok or not clean_path:
@@ -307,30 +325,13 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     ok = (p_img >= thr_base) and (hits >= 2)
     return int(ok), p_img, thr_base, hits
 
-# ---------------- UI ----------------
-st.write("")
-uploaded = st.file_uploader(
-    "Upload scanned page",
-    type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"],
-    label_visibility="collapsed"
-)
-
-def safe_show_image(img_bgr):
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    try:
-        st.image(rgb, width="stretch")   # deprecation fix
-    except TypeError:
-        st.image(rgb)
-
 if uploaded:
     try:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Scanner ID (14-class if files present)
         s_lab, s_conf = try_scanner_predict(residual)
 
-        # Tamper pipeline: prefer paired if original exists; otherwise image-level
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
         pid = re.search(r"(s\d+_\d+)", display_name)
         pid = pid.group(1) if pid else None
