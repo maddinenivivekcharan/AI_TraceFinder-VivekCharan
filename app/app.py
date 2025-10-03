@@ -4,10 +4,9 @@ import os, re, glob, math, json, pickle
 from pathlib import Path
 import numpy as np
 import streamlit as st
-import cv2, pywt
+import cv2, pywt, tensorflow as tf
 from PIL import Image
 from skimage.feature import local_binary_pattern as sk_lbp
-import tensorflow as tf
 
 APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
@@ -24,7 +23,7 @@ TAMP_ROOT = ART_SCN / "Tampered images"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
-# ---------- IO helpers ----------
+# ----------------- Image utils -----------------
 def decode_upload_to_bgr(uploaded):
     try: uploaded.seek(0)
     except Exception: pass
@@ -79,47 +78,57 @@ def fft_radial_energy(img, K=6):
         m=(r>=bins[i])&(r<bins[i+1]); feats.append(float(mag[m].mean() if m.any() else 0.0))
     return np.asarray(feats, dtype=np.float32)
 
-# ---------- Scanner-ID: auto-match consistent stack ----------
-def load_scanner_model():
+# ----------------- Scanner-ID: model-driven lock -----------------
+def load_any_hybrid():
     for p in [ART_SCN/"scanner_hybrid_14.keras", ART_SCN/"scanner_hybrid.keras", ART_SCN/"scanner_hybrid.h5", ART_SCN/"scanner_hybrid"]:
-        if p.exists():
-            return tf.keras.models.load_model(str(p)), p.name
+        if p.exists(): return tf.keras.models.load_model(str(p)), p.name
     return None, None
 
-def lock_scanner_stack():
-    # Verify scaler features == len(fp_keys)+6+10
-    sc_path = ART_SCN/"hybrid_feat_scaler.pkl"
-    le_candidates = [ART_SCN/"hybrid_label_encoder.pkl", ART_SCN/"hybrid_label_encoder (1).pkl"]
-    with open(sc_path,"rb") as f: sc = pickle.load(f)
-    le = None
-    for lep in le_candidates:
-        if lep.exists():
-            with open(lep,"rb") as f: le = pickle.load(f); break
-    if le is None: raise FileNotFoundError("hybrid_label_encoder.pkl not found in app/models")
+hyb_model, model_file = load_any_hybrid()
+scanner_ready = hyb_model is not None
+scanner_err = None if scanner_ready else "No scanner_hybrid model file found under app/models."
 
-    sets = [
+# Figure required tabular feature length directly from the loaded model
+required_tab_feats = None
+if scanner_ready:
+    # [image_input, tabular_input] -> second input shape[-1]
+    try:
+        required_tab_feats = int(hyb_model.inputs[1].shape[-1])
+    except Exception:
+        scanner_ready = False
+        scanner_err = "Hybrid model missing second input; need [image, features] inputs."
+
+def must_pick_label_encoder():
+    for lep in [ART_SCN/"hybrid_label_encoder.pkl", ART_SCN/"hybrid_label_encoder (1).pkl"]:
+        if lep.exists():
+            with open(lep,"rb") as f: return pickle.load(f)
+    raise FileNotFoundError("hybrid_label_encoder.pkl not found")
+
+def lock_scanner_artifacts_by_required(required_feats: int):
+    # Option A: 14-class -> keys=fp_keys_14.npy -> corr=len(keys); total = keys + 6 + 10 = required
+    # Option B: legacy -> fp_keys.npy -> keys + 6 + 10 = required
+    sc = pickle.load(open(ART_SCN/"hybrid_feat_scaler.pkl","rb"))
+    candidates = [
         (ART_SCN/"scanner_fingerprints_14.pkl", ART_SCN/"fp_keys_14.npy", "14"),
         (ART_SCN/"scanner_fingerprints.pkl",    ART_SCN/"fp_keys.npy",    "legacy"),
     ]
-    for fps_path, keys_path, tag in sets:
+    for fps_path, keys_path, tag in candidates:
         if not fps_path.exists() or not keys_path.exists(): continue
         with open(fps_path,"rb") as f: fps = pickle.load(f)
         keys = np.load(keys_path, allow_pickle=True).tolist()
-        expected = len(keys) + 6 + 10
-        if getattr(sc,"n_features_in_",None) == expected:
-            return dict(le=le, sc=sc, fps=fps, keys=keys, tag=tag)
-    raise RuntimeError("No matching scanner stack: scaler features do not match fp_keys length.")
+        if len(keys) + 6 + 10 == required_feats and getattr(sc,"n_features_in_",None) == required_feats:
+            return dict(fps=fps, keys=keys, scaler=sc, tag=tag)
+    raise RuntimeError(f"No fingerprint/keys set matches required feature size {required_feats} and scaler.")
 
-hyb_model, model_name = load_scanner_model()
-scanner_ready = hyb_model is not None
-scanner_err = None if scanner_ready else "No scanner_hybrid(.keras) found under app/models."
-
-try:
-    stk = lock_scanner_stack()
-    le_sc, sc_sc, scanner_fps, fp_keys = stk["le"], stk["sc"], stk["fps"], stk["keys"]
-except Exception as e:
-    scanner_ready = False
-    scanner_err = str(e)
+if scanner_ready:
+    try:
+        le_sc = must_pick_label_encoder()
+        locked = lock_scanner_artifacts_by_required(required_tab_feats)
+        scanner_fps, fp_keys, sc_sc, stack_tag = locked["fps"], locked["keys"], locked["scaler"], locked["tag"]
+        st.caption(f"Scanner stack locked: model={model_file}, tag={stack_tag}, feats={required_tab_feats}")
+    except Exception as e:
+        scanner_ready = False
+        scanner_err = str(e)
 
 def corr2d(a,b):
     a=a.astype(np.float32).ravel(); b=b.astype(np.float32).ravel()
@@ -128,9 +137,9 @@ def corr2d(a,b):
     return float((a@b)/d) if d!=0 else 0.0
 
 def make_scanner_feats(res):
-    v_corr=[corr2d(res, scanner_fps[k]) for k in fp_keys]   # len(keys)
-    v_fft =fft_radial_energy(res,K=6).tolist()              # 6
-    v_lbp =lbp_hist_safe(res,P=8,R=1.0).tolist()            # 10
+    v_corr=[corr2d(res, scanner_fps[k]) for k in fp_keys]  # len(keys)
+    v_fft =fft_radial_energy(res,K=6).tolist()
+    v_lbp =lbp_hist_safe(res,P=8,R=1.0).tolist()
     v=np.array(v_corr+v_fft+v_lbp, dtype=np.float32).reshape(1,-1)
     return sc_sc.transform(v)
 
@@ -138,17 +147,13 @@ def try_scanner_predict(residual):
     if not scanner_ready:
         if scanner_err: st.info(f"Scanner-ID disabled: {scanner_err}")
         return "Unknown", 0.0
-    try:
-        x_img=np.expand_dims(residual,axis=(0,-1))
-        x_ft =make_scanner_feats(residual)
-        ps=hyb_model.predict([x_img,x_ft],verbose=0).ravel()
-        idx=int(np.argmax(ps))
-        return str(le_sc.classes_[idx]), float(ps[idx]*100.0)
-    except Exception as e:
-        st.warning(f"Scanner-ID inference error: {e}")
-        return "Unknown", 0.0
+    x_img=np.expand_dims(residual,axis=(0,-1))
+    x_ft =make_scanner_feats(residual)
+    ps=hyb_model.predict([x_img,x_ft],verbose=0).ravel()
+    idx=int(np.argmax(ps))
+    return str(le_sc.classes_[idx]), float(ps[idx]*100.0)
 
-# ---------- Image-level tamper ----------
+# ----------------- Image-level tamper -----------------
 tamper_image_ok = True
 try:
     sc_img = pickle.load(open(ART_IMG/"image_scaler.pkl","rb"))
@@ -161,23 +166,23 @@ except Exception as e:
     st.info(f"Tamper (image-level) disabled: {e}")
 
 def image_feat_mean(res):
-    patches=extract_patches(res,limit=MAX_PATCHES,seed=111)
+    patches = extract_patches(res, limit=MAX_PATCHES, seed=111)
     feats=[]
     for p in patches:
         lbp=lbp_hist_safe(p,8,1.0); fft6=fft_radial_energy(p,6)
         c1=float(np.std(p)); c2=float(np.mean(np.abs(p - np.mean(p))))
-        feats.append(np.concatenate([lbp,fft6,np.array([c1,c2],np.float32)],0))
-    if len(feats)==0: feats=[np.zeros(18,np.float32)]
-    return np.mean(np.stack(feats,0),axis=0).reshape(1,-1)
+        feats.append(np.concatenate([lbp, fft6, np.array([c1,c2], np.float32)], 0))
+    if len(feats)==0: feats=[np.zeros(18, np.float32)]
+    return np.mean(np.stack(feats,0), axis=0).reshape(1,-1)
 
 def infer_tamper_image_from_residual(residual, domain):
     if not tamper_image_ok: return 0,0.0,0.5
-    x=sc_img.transform(image_feat_mean(residual))
-    p=float(clf_img.predict_proba(x)[0,1])
-    thr=THR_IMG.get("by_domain",{}).get(domain, THR_IMG.get("global",0.5))
+    x = sc_img.transform(image_feat_mean(residual))
+    p = float(clf_img.predict_proba(x)[0,1])
+    thr = THR_IMG.get("by_domain",{}).get(domain, THR_IMG.get("global",0.5))
     return int(p>=thr), p, thr
 
-# ---------- Paired (optional) ----------
+# ----------------- Paired (optional) -----------------
 tamper_pair_ok = True
 try:
     sc_pair  = pickle.load(open(ART_PAIR/"pair_scaler.pkl","rb"))
