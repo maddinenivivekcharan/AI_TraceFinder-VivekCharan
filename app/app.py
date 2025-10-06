@@ -1,5 +1,6 @@
 # app/app.py
 
+
 import os, re, glob, math, json, pickle
 from pathlib import Path
 import numpy as np
@@ -104,12 +105,7 @@ def fft_radial_energy(img, K=6):
 
 # ----------------- Scanner-ID: model-driven lock -----------------
 def load_any_hybrid():
-    for p in [
-        ART_SCN / "scanner_hybrid_14.keras",
-        ART_SCN / "scanner_hybrid.keras",
-        ART_SCN / "scanner_hybrid.h5",
-        ART_SCN / "scanner_hybrid",
-    ]:
+    for p in [ART_SCN / "scanner_hybrid_14.keras", ART_SCN / "scanner_hybrid.keras", ART_SCN / "scanner_hybrid.h5", ART_SCN / "scanner_hybrid"]:
         if p.exists():
             return tf.keras.models.load_model(str(p)), p.name
     return None, None
@@ -353,11 +349,7 @@ def safe_show_image(img_bgr):
         st.image(rgb)
 
 
-uploaded = st.file_uploader(
-    "Upload scanned page",
-    type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"],
-    label_visibility="collapsed",
-)
+uploaded = st.file_uploader("Upload scanned page", type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"], label_visibility="collapsed")
 
 
 if uploaded:
@@ -397,7 +389,7 @@ if uploaded:
                     <div style='font-size:12px;color:#9aa4b2;margin-top:8px;'>p={p_img:.3f} · thr={thr_used:.3f} · domain={domain} · hits={hits}</div>
                 </div>
                 """,
-                unsafe_allow_html=True,
+                unsafe_allow_html=True
             )
     except Exception as e:
         import traceback
