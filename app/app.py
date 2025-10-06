@@ -14,7 +14,7 @@ PATCH = 128
 STRIDE = 64
 MAX_PATCHES = 16
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(_file_).resolve().parent
 ART_SCN = BASE_DIR / "models"
 ART_IMG = ART_SCN
 ART_PAIR = ART_SCN / "artifacts_tamper_pair"
@@ -71,7 +71,7 @@ def lbp_hist_safe(img, P=8, R=1.0):
 def fft_radial_energy(img, K=6):
     f=np.fft.fftshift(np.fft.fft2(img)); mag=np.abs(f)
     h,w=mag.shape; cy,cx=h//2,w//2
-    yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)**2 + (xx - cx)**2)
+    yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)*2 + (xx - cx)*2)
     bins=np.linspace(0, r.max()+1e-6, K+1)
     feats=[]
     for i in range(K):
@@ -214,7 +214,7 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     def fft_resample_feats(img):
         f=np.fft.fftshift(np.fft.fft2(img)); mag=np.abs(f)
         h,w=mag.shape; cy,cx=h//2,w//2
-        yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)**2+(xx - cx)**2)
+        yy,xx=np.ogrid[:h,:w]; r=np.sqrt((yy - cy)*2+(xx - cx)*2)
         rmax=r.max()+1e-6; b1=(r>=0.25*rmax)&(r<0.35*rmax); b2=(r>=0.35*rmax)&(r<0.50*rmax)
         e1=float(mag[b1].mean() if b1.any() else 0.0); e2=float(mag[b2].mean() if b2.any() else 0.0)
         return np.asarray([e1,e2,float(e2/(e1+1e-8))], np.float32)
