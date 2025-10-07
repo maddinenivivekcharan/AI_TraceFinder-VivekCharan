@@ -20,7 +20,7 @@ HIT_THR = 0.85
 MIN_HITS = 2
 
 # ---------------- Paths (repo-relative) ----------------
-BASE_DIR = Path(_file_).resolve().parent
+BASE_DIR = Path(file).resolve().parent
 ART_SCN = BASE_DIR / "models"
 TAMP_ROOT = ART_SCN / "Tampered images"
 ART_TP = ART_SCN / "artifacts_tamper_patch"
