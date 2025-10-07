@@ -51,7 +51,6 @@ def decode_upload_to_bgr(uploaded):
         raise ValueError("Could not decode file")
     return bgr, name
 
-
 def load_to_residual_from_bgr(bgr):
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) if bgr.ndim == 3 else bgr
     gray = cv2.resize(gray, IMG_SIZE, interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
@@ -59,7 +58,6 @@ def load_to_residual_from_bgr(bgr):
     cH.fill(0); cV.fill(0); cD.fill(0)
     den = pywt.idwt2((cA, (cH, cV, cD)), "haar")
     return (gray - den).astype(np.float32)
-
 
 def extract_patches(res, patch=PATCH, stride=STRIDE, limit=MAX_PATCHES, seed=42):
     H, W = res.shape
@@ -71,7 +69,6 @@ def extract_patches(res, patch=PATCH, stride=STRIDE, limit=MAX_PATCHES, seed=42)
     coords = coords[:min(limit, len(coords))]
     return [res[y:y+patch, x:x+patch] for y, x in coords]
 
-
 def lbp_hist_safe(img, P=8, R=1.0):
     rng = float(np.ptp(img))
     g = np.zeros_like(img, dtype=np.float32) if rng < 1e-12 else (img - float(np.min(img))) / (rng + 1e-8)
@@ -80,7 +77,6 @@ def lbp_hist_safe(img, P=8, R=1.0):
     n_bins = P + 2
     hist, _ = np.histogram(codes, bins=np.arange(n_bins + 1), density=True)
     return hist.astype(np.float32)
-
 
 def fft_radial_energy(img, K=6):
     f = np.fft.fftshift(np.fft.fft2(img))
@@ -103,7 +99,6 @@ def load_hybrid_14():
         raise FileNotFoundError("scanner_hybrid_14.keras not found in app/models")
     return tf.keras.models.load_model(str(p))
 
-
 def load_strict_14_artifacts():
     # Scaler must be 30-d
     with open(ART_SCN / "hybrid_feat_scaler.pkl", "rb") as f:
@@ -124,7 +119,6 @@ def load_strict_14_artifacts():
 
     return sc, fps, keys, le
 
-
 # Load all 14-class components
 hyb_model = load_hybrid_14()
 sc_sc, scanner_fps, fp_keys, le_sc = load_strict_14_artifacts()
@@ -139,26 +133,23 @@ if req_feats != 30:
 
 st.caption("Scanner stack locked: 14‑labels · feats=30")
 
-
 def corr2d(a, b):
     a = a.astype(np.float32).ravel(); b = b.astype(np.float32).ravel()
     a -= a.mean(); b -= b.mean()
     d = np.linalg.norm(a) * np.linalg.norm(b)
     return float((a @ b) / d) if d != 0 else 0.0
 
-
 def make_scanner_feats(res):
     # 14 + 6 + 10 = 30
     v_corr = [corr2d(res, scanner_fps[k]) for k in fp_keys]  # 14
-    v_fft = fft_radial_energy(res, K=6).tolist()             # 6
-    v_lbp = lbp_hist_safe(res, P=8, R=1.0).tolist()          # 10
+    v_fft = fft_radial_energy(res, K=6).tolist()              # 6
+    v_lbp = lbp_hist_safe(res, P=8, R=1.0).tolist()           # 10
     v = np.array(v_corr + v_fft + v_lbp, dtype=np.float32).reshape(1, -1)
     if v.shape[1] != 30:
         raise RuntimeError(f"Built {v.shape[1]} features, expected 30 — check fp_keys_14.npy and feature code")
     if getattr(sc_sc, "n_features_in_", None) != 30:
         raise RuntimeError("Scaler not 30‑dim — replace hybrid_feat_scaler.pkl with 14‑class version")
     return sc_sc.transform(v)
-
 
 def try_scanner_predict(residual):
     x_img = np.expand_dims(residual, axis=(0, -1))
@@ -178,10 +169,12 @@ try:
     if not thrp.exists():
         thrp = ART_IMG / "image_thresholds"
     THR_IMG = json.load(open(thrp, "r"))
+    # CHANGE 1: calibrated evaluation-time offset for tamper_dir
+    if "by_domain" in THR_IMG and "tamper_dir" in THR_IMG["by_domain"]:
+        THR_IMG["by_domain"]["tamper_dir"] = float(max(0.0, THR_IMG["by_domain"]["tamper_dir"] - 0.10))
 except Exception as e:
     tamper_image_ok = False
     st.info(f"Tamper (image-level) disabled: {e}")
-
 
 def image_feat_mean(res):
     patches = extract_patches(res, limit=MAX_PATCHES, seed=111)
@@ -195,7 +188,6 @@ def image_feat_mean(res):
     if len(feats) == 0:
         feats = [np.zeros(18, np.float32)]
     return np.mean(np.stack(feats, 0), axis=0).reshape(1, -1)
-
 
 def infer_tamper_image_from_residual(residual, domain):
     if not tamper_image_ok:
@@ -216,11 +208,9 @@ try:
 except Exception:
     tamper_pair_ok = False
 
-
 def pid_from_name(p):
     m = re.search(r"(s\d+_\d+)", os.path.basename(p))
     return m.group(1) if m else None
-
 
 def build_orig_index():
     try:
@@ -229,9 +219,7 @@ def build_orig_index():
     except Exception:
         return {}
 
-
 orig_map = build_orig_index()
-
 
 def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     if not tamper_pair_ok or not clean_path:
@@ -318,6 +306,7 @@ if uploaded:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
+        # CHANGE 2: always reuse Objective 1 scanner-ID
         s_lab, s_conf = try_scanner_predict(residual)
 
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
