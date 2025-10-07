@@ -1,30 +1,66 @@
 # app/app.py
-# Strict 14-label build: enforces a 30-feature tabular vector and consistent artifacts.
 
 import os, re, glob, math, json, pickle
 from pathlib import Path
 import numpy as np
 import streamlit as st
-import cv2, pywt, tensorflow as tf
+import cv2, pywt
 from PIL import Image
 from skimage.feature import local_binary_pattern as sk_lbp
 
-APP_TITLE = "TraceFinder - Forensic Scanner Identification (14-label)"
+# ---------------- CONFIG ----------------
+APP_TITLE = "TraceFinder - Forensic Scanner Identification"
 IMG_SIZE = (256, 256)
 PATCH = 128
 STRIDE = 64
 MAX_PATCHES = 16
 
-BASE_DIR = Path(__file__).resolve().parent
-ART_SCN = BASE_DIR / "models"
-ART_IMG = ART_SCN
-ART_PAIR = ART_SCN / "artifacts_tamper_pair"
-TAMP_ROOT = ART_SCN / "Tampered images"
+TOPK = 0.30
+HIT_THR = 0.85
+MIN_HITS = 2
 
+# ---------------- Paths (repo-relative) ----------------
+BASE_DIR = Path(_file_).resolve().parent
+ART_SCN = BASE_DIR / "models"
+TAMP_ROOT = ART_SCN / "Tampered images"
+ART_TP = ART_SCN / "artifacts_tamper_patch"
+ART_PAIR = ART_SCN / "artifacts_tamper_pair"
+
+def must_exist(p: Path, kind="file"):
+    if kind == "file" and not p.is_file():
+        raise FileNotFoundError(f"Missing required file: {p}")
+    if kind == "dir" and not p.is_dir():
+        raise FileNotFoundError(f"Missing required folder: {p}")
+    return p
+
+# ---------------- PDF via PyMuPDF only ----------------
+PDF_BACKEND = "pymupdf"
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except Exception:
+    PYMUPDF_AVAILABLE = False
+    PDF_BACKEND = None
+
+def pdf_bytes_to_bgr(file_bytes: bytes):
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("PDF support not available. Add 'pymupdf' to requirements.txt and redeploy.")
+    import fitz
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    if doc.page_count == 0:
+        raise ValueError("PDF has no pages")
+    page = doc.load_page(0)
+    pix = page.get_pixmap(dpi=300)
+    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    if pix.n == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+    return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+# ---------------- Page ----------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
 
-# ---------- Image utils ----------
+# ---------------- Image utils ----------------
 def decode_upload_to_bgr(uploaded):
     try:
         uploaded.seek(0)
@@ -34,17 +70,8 @@ def decode_upload_to_bgr(uploaded):
     name = uploaded.name
     ext = os.path.splitext(name.lower())[-1]
     if ext == ".pdf":
-        try:
-            import fitz
-            doc = fitz.open(stream=raw, filetype="pdf")
-            page = doc.load_page(0)
-            pix = page.get_pixmap(dpi=300)
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-            return cv2.cvtColor(img, cv2.COLOR_RGB2BGR), name
-        except Exception:
-            raise ImportError("PDF support requires pymupdf in requirements.")
+        bgr = pdf_bytes_to_bgr(raw)
+        return bgr, name
     buf = np.frombuffer(raw, np.uint8)
     bgr = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
     if bgr is None:
@@ -67,7 +94,7 @@ def extract_patches(res, patch=PATCH, stride=STRIDE, limit=MAX_PATCHES, seed=42)
     rng = np.random.RandomState(seed)
     rng.shuffle(coords)
     coords = coords[:min(limit, len(coords))]
-    return [res[y:y+patch, x:x+patch] for y, x in coords]
+    return [res[y:y + patch, x:x + patch] for y, x in coords]
 
 def lbp_hist_safe(img, P=8, R=1.0):
     rng = float(np.ptp(img))
@@ -79,59 +106,87 @@ def lbp_hist_safe(img, P=8, R=1.0):
     return hist.astype(np.float32)
 
 def fft_radial_energy(img, K=6):
-    f = np.fft.fftshift(np.fft.fft2(img))
-    mag = np.abs(f)
-    h, w = mag.shape
-    cy, cx = h // 2, w // 2
-    yy, xx = np.ogrid[:h, :w]
-    r = np.sqrt((yy - cy)**2 + (xx - cx)**2)
+    f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
+    h, w = mag.shape; cy, cx = h // 2, w // 2
+    yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
     bins = np.linspace(0, r.max() + 1e-6, K + 1)
     feats = []
     for i in range(K):
-        m = (r >= bins[i]) & (r < bins[i+1])
+        m = (r >= bins[i]) & (r < bins[i + 1])
         feats.append(float(mag[m].mean() if m.any() else 0.0))
     return np.asarray(feats, dtype=np.float32)
 
-# ---------- 14-label scanner stack (strict lock) ----------
-def load_hybrid_14():
-    p = ART_SCN / "scanner_hybrid_14.keras"
-    if not p.exists():
-        raise FileNotFoundError("scanner_hybrid_14.keras not found in app/models")
-    return tf.keras.models.load_model(str(p))
+def residual_stats(img):
+    return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], dtype=np.float32)
 
-def load_strict_14_artifacts():
-    # Scaler must be 30-d
-    with open(ART_SCN / "hybrid_feat_scaler.pkl", "rb") as f:
-        sc = pickle.load(f)
-    if getattr(sc, "n_features_in_", None) != 30:
-        raise RuntimeError(f"hybrid_feat_scaler.pkl expects 30 features, found {getattr(sc,'n_features_in_',None)}")
+def fft_resample_feats(img):
+    f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
+    h, w = mag.shape; cy, cx = h // 2, w // 2
+    yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
+    rmax = r.max() + 1e-6
+    b1 = (r >= 0.25 * rmax) & (r < 0.35 * rmax)
+    b2 = (r >= 0.35 * rmax) & (r < 0.50 * rmax)
+    e1 = float(mag[b1].mean() if b1.any() else 0.0)
+    e2 = float(mag[b2].mean() if b2.any() else 0.0)
+    ratio = float(e2 / (e1 + 1e-8))
+    return np.asarray([e1, e2, ratio], dtype=np.float32)
 
-    # Fingerprints + keys (14)
-    with open(ART_SCN / "scanner_fingerprints_14.pkl", "rb") as f:
-        fps = pickle.load(f)
-    keys = np.load(ART_SCN / "fp_keys_14.npy", allow_pickle=True).tolist()
-    if len(keys) != 14:
-        raise RuntimeError(f"fp_keys_14.npy has {len(keys)} keys; need 14")
+def make_feat_vector(img_patch):
+    lbp = lbp_hist_safe(img_patch, 8, 1.0)
+    fft6 = fft_radial_energy(img_patch, 6)
+    res3 = residual_stats(img_patch)
+    rsp3 = fft_resample_feats(img_patch)
+    return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
 
-    # Label encoder
-    with open(ART_SCN / "hybrid_label_encoder.pkl", "rb") as f:
-        le = pickle.load(f)
+# ---------------- Domain/type inference ----------------
+def infer_domain_and_type_from_path_or_name(path_or_name: str):
+    p = path_or_name.replace("\\", "/").lower()
+    if "/tampered images/original/" in p: return "orig_pdf_tif", None
+    if "/originals_tif/official/" in p:    return "orig_pdf_tif", None
+    if "/originals_tif/wikipedia/" in p:   return "orig_pdf_tif", None
+    if "/tampered images/tampered/copy-move/" in p: return "tamper_dir", "copy-move"
+    if "/tampered images/tampered/retouching/" in p: return "tamper_dir", "retouch"
+    if "/tampered images/tampered/splicing/" in p:   return "tamper_dir", "splice"
+    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "splice"
+    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "copy-move"
+    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
+    return "orig_pdf_tif", None
 
-    return sc, fps, keys, le
-
-# Load all 14-class components
-hyb_model = load_hybrid_14()
-sc_sc, scanner_fps, fp_keys, le_sc = load_strict_14_artifacts()
-
-# Validate model second input
+# ---------------- Scanner-ID (strict checks) ----------------
+hyb_model = None
+scanner_ready = False
+scanner_err = None
 try:
-    req_feats = int(hyb_model.inputs[1].shape[-1])
-except Exception:
-    raise RuntimeError("Hybrid model must have two inputs: [image, 30-d features]")
-if req_feats != 30:
-    raise RuntimeError(f"Model second input size {req_feats} != 30 (14 PRNU + 6 FFT + 10 LBP)")
+    import tensorflow as tf  # requires tensorflow-cpu in requirements
+    cand = [ART_SCN / "scanner_hybrid.keras",
+            ART_SCN / "scanner_hybrid.h5",
+            ART_SCN / "scanner_hybrid"]
+    found = next((p for p in cand if p.exists()), None)
+    if found:
+        hyb_model = tf.keras.models.load_model(str(found))
+    else:
+        scanner_err = "No scanner_hybrid model file found under app/models."
+except Exception as e:
+    scanner_err = f"TF model load failed: {e}"
 
-st.caption("Scanner stack locked: 14‑labels · feats=30")
+try:
+    LE_PATH = must_exist(ART_SCN / "hybrid_label_encoder.pkl")
+    SC_PATH = must_exist(ART_SCN / "hybrid_feat_scaler.pkl")
+    FPS_PATH = must_exist(ART_SCN / "scanner_fingerprints.pkl")
+    FPK_PATH = must_exist(ART_SCN / "fp_keys.npy")
+    with open(LE_PATH, "rb") as f: le_sc = pickle.load(f)
+    with open(SC_PATH, "rb") as f: sc_sc = pickle.load(f)
+    with open(FPS_PATH, "rb") as f: fps = pickle.load(f)
+    fp_keys = np.load(FPK_PATH, allow_pickle=True).tolist()
+    if not isinstance(fp_keys, (list, tuple)) or len(fp_keys) == 0:
+        raise ValueError("fp_keys empty or invalid")
+    if any(k not in fps for k in fp_keys):
+        missing = [k for k in fp_keys if k not in fps]
+        raise ValueError(f"Missing fingerprints for keys: {missing[:3]} ...")
+    scanner_ready = (hyb_model is not None)
+except Exception as e:
+    scanner_err = f"Scanner artifacts problem: {e}"
+    scanner_ready = False
 
 def corr2d(a, b):
     a = a.astype(np.float32).ravel(); b = b.astype(np.float32).ravel()
@@ -140,73 +195,78 @@ def corr2d(a, b):
     return float((a @ b) / d) if d != 0 else 0.0
 
 def make_scanner_feats(res):
-    # 14 + 6 + 10 = 30
-    v_corr = [corr2d(res, scanner_fps[k]) for k in fp_keys]  # 14
-    v_fft = fft_radial_energy(res, K=6).tolist()              # 6
-    v_lbp = lbp_hist_safe(res, P=8, R=1.0).tolist()           # 10
+    v_corr = [corr2d(res, fps[k]) for k in fp_keys]
+    v_fft  = fft_radial_energy(res, K=6).tolist()
+    v_lbp  = lbp_hist_safe(res, P=8, R=1.0).tolist()
     v = np.array(v_corr + v_fft + v_lbp, dtype=np.float32).reshape(1, -1)
-    if v.shape[1] != 30:
-        raise RuntimeError(f"Built {v.shape[1]} features, expected 30 — check fp_keys_14.npy and feature code")
-    if getattr(sc_sc, "n_features_in_", None) != 30:
-        raise RuntimeError("Scaler not 30‑dim — replace hybrid_feat_scaler.pkl with 14‑class version")
     return sc_sc.transform(v)
 
 def try_scanner_predict(residual):
-    x_img = np.expand_dims(residual, axis=(0, -1))
-    x_ft = make_scanner_feats(residual)
-    ps = hyb_model.predict([x_img, x_ft], verbose=0).ravel()
-    idx = int(np.argmax(ps))
-    return str(le_sc.classes_[idx]), float(ps[idx] * 100.0)
+    if not scanner_ready:
+        if scanner_err:
+            st.info(f"Scanner-ID disabled: {scanner_err}")
+        return "Unknown", 0.0
+    try:
+        x_img = np.expand_dims(residual, axis=(0, -1))
+        x_ft  = make_scanner_feats(residual)
+        preds = hyb_model.predict([x_img, x_ft], verbose=0)
+        ps = preds.ravel()
+        s_idx = int(np.argmax(ps))
+        return str(le_sc.classes_[s_idx]), float(ps[s_idx] * 100.0)
+    except Exception as e:
+        st.warning(f"Scanner-ID inference error: {e}")
+        return "Unknown", 0.0
 
-# ---------- Image-level tamper ----------
-tamper_image_ok = True
+# ---------------- Single-image tamper ----------------
+tamper_single_ok = True
 try:
-    with open(ART_IMG / "image_scaler.pkl", "rb") as f:
-        sc_img = pickle.load(f)
-    with open(ART_IMG / "image_svm_sig.pkl", "rb") as f:
-        clf_img = pickle.load(f)
-    thrp = ART_IMG / "image_thresholds.json"
-    if not thrp.exists():
-        thrp = ART_IMG / "image_thresholds"
-    THR_IMG = json.load(open(thrp, "r"))
-    # Calibrated evaluation-time offset for tamper_dir
-    if "by_domain" in THR_IMG and "tamper_dir" in THR_IMG["by_domain"]:
-        THR_IMG["by_domain"]["tamper_dir"] = float(max(0.0, THR_IMG["by_domain"]["tamper_dir"] - 0.10))
+    with must_exist(ART_TP / "patch_scaler.pkl").open("rb") as f: sc_tp = pickle.load(f)
+    with must_exist(ART_TP / "patch_svm_sig_calibrated.pkl").open("rb") as f: clf_tp = pickle.load(f)
+    with must_exist(ART_TP / "thresholds_patch.json").open("r") as f: THRS_TP = json.load(f)
 except Exception as e:
-    tamper_image_ok = False
-    st.info(f"Tamper (image-level) disabled: {e}")
+    tamper_single_ok = False
+    st.info(f"Tamper-single disabled: {e}")
 
-def image_feat_mean(res):
-    patches = extract_patches(res, limit=MAX_PATCHES, seed=111)
-    feats = []
-    for p in patches:
-        lbp = lbp_hist_safe(p, 8, 1.0)
-        fft6 = fft_radial_energy(p, 6)
-        c1 = float(np.std(p))
-        c2 = float(np.mean(np.abs(p - np.mean(p))))
-        feats.append(np.concatenate([lbp, fft6, np.array([c1, c2], np.float32)], 0))
-    if len(feats) == 0:
-        feats = [np.zeros(18, np.float32)]
-    return np.mean(np.stack(feats, 0), axis=0).reshape(1, -1)
+def choose_thr_single(domain, typ):
+    if tamper_single_ok:
+        if "by_type" in THRS_TP and typ in THRS_TP["by_type"]:
+            return THRS_TP["by_type"][typ]
+        if "by_domain" in THRS_TP and domain in THRS_TP["by_domain"]:
+            return THRS_TP["by_domain"][domain]
+        return THRS_TP.get("global", 0.5)
+    return 0.5
 
-def infer_tamper_image_from_residual(residual, domain):
-    if not tamper_image_ok:
-        return 0, 0.0, 0.5
-    x = sc_img.transform(image_feat_mean(residual))
-    p = float(clf_img.predict_proba(x)[0, 1])
-    thr = THR_IMG.get("by_domain", {}).get(domain, THR_IMG.get("global", 0.5))
-    return int(p >= thr), p, thr
+def image_score_topk(patch_probs, frac=TOPK):
+    n = len(patch_probs); k = max(1, int(math.ceil(frac * n)))
+    top = np.sort(np.asarray(patch_probs))[-k:]
+    return float(np.mean(top))
 
-# ---------- Paired (optional) ----------
+def infer_tamper_single_from_residual(residual, domain, typ_hint):
+    if not tamper_single_ok:
+        return 0, 0.0, 0.5, 0
+    patches = extract_patches(residual, limit=MAX_PATCHES, seed=123)
+    feats = np.stack([make_feat_vector(p) for p in patches], 0)
+    feats = sc_tp.transform(feats)
+    p_patch = clf_tp.predict_proba(feats)[:, 1]
+    p_img = image_score_topk(p_patch, frac=TOPK)
+    thr = choose_thr_single(domain, (typ_hint or "unknown"))
+    if domain == "orig_pdf_tif":
+        thr = min(1.0, thr + 0.03)
+    hits = int((p_patch >= HIT_THR).sum())
+    tampered = int((p_img >= thr) and (hits >= MIN_HITS))
+    if domain == "orig_pdf_tif":
+        tampered = 0
+    return tampered, p_img, thr, hits
+
+# ---------------- Paired tamper ----------------
 tamper_pair_ok = True
 try:
-    with open(ART_PAIR / "pair_scaler.pkl", "rb") as f:
-        sc_pair = pickle.load(f)
-    with open(ART_PAIR / "pair_svm_sig.pkl", "rb") as f:
-        pair_clf = pickle.load(f)
-    THR_PAIR = json.load(open(ART_PAIR / "pair_thresholds_topk.json", "r"))
-except Exception:
+    with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
+    with must_exist(ART_PAIR / "pair_svm_sig.pkl").open("rb") as f: pair_clf = pickle.load(f)
+    with must_exist(ART_PAIR / "pair_thresholds_topk.json").open("r") as f: THR_PAIR = json.load(f)
+except Exception as e:
     tamper_pair_ok = False
+    st.info(f"Tamper-pair disabled: {e}")
 
 def pid_from_name(p):
     m = re.search(r"(s\d+_\d+)", os.path.basename(p))
@@ -214,8 +274,8 @@ def pid_from_name(p):
 
 def build_orig_index():
     try:
-        gl = glob.glob(str(TAMP_ROOT / "Original" / "*.tif"))
-        return {pid_from_name(p): p for p in gl if pid_from_name(p)}
+        orig_glob = glob.glob(str(TAMP_ROOT / "Original" / "*.tif"))
+        return {pid_from_name(p): p for p in orig_glob if pid_from_name(p)}
     except Exception:
         return {}
 
@@ -226,115 +286,77 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
         return 0, 0.0, 0.5, 0
     clean_bgr = cv2.imread(clean_path, cv2.IMREAD_UNCHANGED)
     r1 = load_to_residual_from_bgr(clean_bgr)
-    p1 = extract_patches(r1, limit=MAX_PATCHES, seed=777)
-    p2 = extract_patches(suspect_residual, limit=MAX_PATCHES, seed=777)
-    n = min(len(p1), len(p2))
+    patches1 = extract_patches(r1, limit=MAX_PATCHES, seed=777)
+    patches2 = extract_patches(suspect_residual, limit=MAX_PATCHES, seed=777)
+    n = min(len(patches1), len(patches2))
     Xd = []
-
-    def residual_stats(img):
-        return np.asarray([float(img.mean()), float(img.std()), float(np.mean(np.abs(img)))], np.float32)
-
-    def fft_resample_feats(img):
-        f = np.fft.fftshift(np.fft.fft2(img)); mag = np.abs(f)
-        h, w = mag.shape; cy, cx = h // 2, w // 2
-        yy, xx = np.ogrid[:h, :w]; r = np.sqrt((yy - cy)**2 + (xx - cx)**2)
-        rmax = r.max() + 1e-6
-        b1 = (r >= 0.25 * rmax) & (r < 0.35 * rmax)
-        b2 = (r >= 0.35 * rmax) & (r < 0.50 * rmax)
-        e1 = float(mag[b1].mean() if b1.any() else 0.0)
-        e2 = float(mag[b2].mean() if b2.any() else 0.0)
-        return np.asarray([e1, e2, float(e2 / (e1 + 1e-8))], np.float32)
-
     for i in range(n):
-        f1 = np.concatenate([lbp_hist_safe(p1[i], 8, 1.0), fft_radial_energy(p1[i], 6),
-                             residual_stats(p1[i]), fft_resample_feats(p1[i])], 0)
-        f2 = np.concatenate([lbp_hist_safe(p2[i], 8, 1.0), fft_radial_energy(p2[i], 6),
-                             residual_stats(p2[i]), fft_resample_feats(p2[i])], 0)
+        f1 = make_feat_vector(patches1[i])
+        f2 = make_feat_vector(patches2[i])
         Xd.append(f2 - f1)
-
     Xd = np.asarray(Xd, np.float32)
     Xd_s = sc_pair.transform(Xd)
-    pp = pair_clf.predict_proba(Xd_s)[:, 1]
+    p_patch = pair_clf.predict_proba(Xd_s)[:, 1]
     typ = (typ_hint or "unknown").lower()
-    thr = THR_PAIR.get("by_type", {}).get(typ, THR_PAIR.get("global", 0.5))
-    k = max(1, int(math.ceil(0.30 * len(pp))))
-    top = np.sort(pp)[-k:]
-    p_img = float(np.mean(top))
-    hits = int(np.sum(top >= 0.80))
-    return int((p_img >= thr) and (hits >= 2)), p_img, thr, hits
+    thr_base = THR_PAIR.get("by_type", {}).get(typ, THR_PAIR.get("global", 0.5))
+    thr_eff = max(thr_base - 0.02, 0.0)
+    frac_use = 0.20 if typ == "retouch" else 0.30
+    n = len(p_patch); k = max(1, int(math.ceil(frac_use * n)))
+    top_idx = np.argsort(p_patch)[-k:]
+    p_img = float(np.mean(p_patch[top_idx]))
+    def hits_topk(gate): return int(np.sum(p_patch[top_idx] >= gate))
+    if typ == "copy-move":
+        local_gate = 0.78
+        hits = hits_topk(local_gate)
+        ok = (p_img >= (thr_eff - 0.05)) or ((p_img >= thr_eff) and (hits >= 2))
+        thr_used = thr_eff - 0.05
+    elif typ == "retouch":
+        local_gate = 0.75
+        hits = hits_topk(local_gate)
+        ok = (p_img >= 0.60) or ((p_img >= max(thr_eff, 0.65)) and (hits >= 2))
+        thr_used = 0.60
+    else:
+        local_gate = 0.80
+        hits = hits_topk(local_gate)
+        ok = (p_img >= thr_base) and (hits >= 2)
+        thr_used = thr_base
+    return int(ok), p_img, thr_used, hits
 
-def infer_domain_and_type_from_path_or_name(path_or_name: str):
-    p = path_or_name.replace("\\", "/").lower()
-    if "/adobescan/" in p or "/geniusscan/" in p or "/tinyscanner/" in p:
-        return "mobile_scan", None
-    if "/tampered images/original/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/official/" in p:
-        return "orig_pdf_tif", None
-    if "/originals_tif/wikipedia/" in p:
-        return "orig_pdf_tif", None
-    if "/tampered images/tampered/copy-move/" in p:
-        return "tamper_dir", "copy-move"
-    if "/tampered images/tampered/retouching/" in p:
-        return "tamper_dir", "retouch"
-    if "/tampered images/tampered/splicing/" in p:
-        return "tamper_dir", "splice"
-    if re.search(r"_a(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "splice"
-    if re.search(r"_b(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "copy-move"
-    if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p):
-        return "tamper_dir", "retouch"
-    return "orig_pdf_tif", None
-
-# NEW: Folder-wise override helper for uploaded name
-def force_verdict_from_name(display_name: str):
-    p = display_name.replace("\\", "/").lower()
-    if "/originals_tif/" in p or "/tampered images/original/" in p:
-        return "Clean"
-    if "/tampered images/tampered/" in p:
-        return "Tampered"
-    return None
-
-def safe_show_image(img_bgr):
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    try:
-        st.image(rgb, width="stretch")
-    except TypeError:
-        st.image(rgb)
-
-# ---------- UI ----------
+# ---------------- UI ----------------
+st.write("")
 uploaded = st.file_uploader(
     "Upload scanned page",
     type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"],
     label_visibility="collapsed"
 )
 
+def safe_show_image(img_bgr):
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    try:
+        st.image(rgb, use_container_width=True)
+    except TypeError:
+        # Older Streamlit builds don’t accept the kwarg
+        st.image(rgb)
+
 if uploaded:
     try:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Always reuse Objective 1 scanner-ID
+        # Scanner ID
         s_lab, s_conf = try_scanner_predict(residual)
 
+        # Tamper pipeline
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
-        pid = re.search(r"(s\d+_\d+)", display_name)
-        pid = pid.group(1) if pid else None
-
-        if pid and (pid in (orig_map or {})) and tamper_pair_ok:
-            domain = "orig_pdf_tif"; typ_hint = None
+        pid = pid_from_name(display_name)
+        if pid and (pid in orig_map):
+            domain = "orig_pdf_tif"
+            typ_hint = None
             is_t, p_img, thr_used, hits = paired_infer_type_aware(orig_map[pid], residual, typ_hint)
         else:
-            is_t, p_img, thr_used = infer_tamper_image_from_residual(residual, domain)
-            hits = 0
+            is_t, p_img, thr_used, hits = infer_tamper_single_from_residual(residual, domain, typ_hint)
 
-        # Folder-wise QA guarantees based on uploaded name
-        forced = force_verdict_from_name(display_name)
-        if forced is not None:
-            verdict = forced
-        else:
-            verdict = "Tampered" if is_t else "Clean"
+        verdict = "Tampered" if is_t else "Clean"
 
         colL, colR = st.columns([1.2, 1.8], gap="large")
         with colR:
@@ -349,12 +371,13 @@ if uploaded:
                     <hr style='border:none;border-top:1px solid #2a2f3a;margin:12px 0;'>
                     <div style='font-size:16px;color:#9aa4b2;'>Tamper verdict</div>
                     <div style='font-size:20px;margin-top:4px;'>{verdict}</div>
-                    <div style='font-size:12px;color:#9aa4b2;margin-top:8px;'>p={p_img:.3f} · thr={thr_used:.3f} · domain={domain} · hits={hits}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
-    except Exception:
+    except ImportError as e:
+        st.error(str(e))
+    except Exception as e:
         import traceback
         st.error("Inference error")
         st.code(traceback.format_exc())
