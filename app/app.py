@@ -375,7 +375,7 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     else:
         local_gate = 0.80
         hits = hits_topk(local_gate)
-        ok = (p_img >= thr_base) and (hits >= 2))
+        ok = (p_img >= thr_base) and (hits >= 2)
         thr_used = thr_base
 
     return int(ok), p_img, thr_used, hits
