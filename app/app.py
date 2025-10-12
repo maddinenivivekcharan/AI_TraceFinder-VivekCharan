@@ -371,9 +371,9 @@ def safe_show_image(img_bgr, thumbnail=False):
     from PIL import Image
     if thumbnail:
         thumb = Image.fromarray(rgb).resize((90, 90))
-        st.image(np.array(thumb), use_container_width=True)
+        st.image(np.array(thumb), use_column_width=True)
     else:
-        st.image(rgb, use_container_width=True)
+        st.image(rgb, use_column_width=True)
 
 # -------- Upload --------
 uploaded = st.file_uploader(
