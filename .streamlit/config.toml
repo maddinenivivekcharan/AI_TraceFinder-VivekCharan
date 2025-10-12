@@ -1,0 +1,12 @@
+[server]
+maxUploadSize = 500
+maxMessageSize = 600
+enableXsrfProtection = true
+enableCORS = true
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
