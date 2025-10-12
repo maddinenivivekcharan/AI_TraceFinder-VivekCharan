@@ -5,30 +5,30 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 import cv2, pywt
+from datetime import datetime
+import io
+import pandas as pd
 
-# Optional PDF support
-PDF_BACKEND = "pymupdf"
+# Optional PDF support (PyMuPDF)
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
 except Exception:
     PYMUPDF_AVAILABLE = False
-    PDF_BACKEND = None
 
 from skimage.feature import local_binary_pattern as sk_lbp
 
-# ------------- CONFIG -------------
-APP_TITLE = "TraceFinder - Forensic Scanner Identification"
+# -------- Config --------
+APP_TITLE = "TraceFinder — Forensic Scanner Identification & Tampered Detection"
 IMG_SIZE = (256, 256)
 PATCH = 128
 STRIDE = 64
 MAX_PATCHES = 16
-
 TOPK = 0.30
 HIT_THR = 0.85
 MIN_HITS = 2
 
-# ------------- Paths (repo-relative) -------------
+# -------- Paths --------
 BASE_DIR = Path(__file__).resolve().parent
 ART_SCN = BASE_DIR / "models"
 TAMP_ROOT = ART_SCN / "Tampered images"
@@ -42,14 +42,57 @@ def must_exist(p: Path, kind="file"):
         raise FileNotFoundError(f"Missing required folder: {p}")
     return p
 
-# ------------- Streamlit header -------------
+# -------- Page + CSS --------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
-st.markdown(f"<h2 style='margin-top:0'>{APP_TITLE}</h2>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <style>
+        .main .block-container {
+            max-width: 1200px;
+            padding-top: 24px;
+            padding-bottom: 24px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .tf-header { display:flex; align-items:center; justify-content:center; text-align:center; margin-bottom: 6px; }
+        .tf-title { font-size: 2.4rem; font-weight: 800; line-height: 1.2; margin: 0; }
+        .tf-sub { text-align:center; color:#9aa4b2; margin: 0 0 18px 0; font-size:0.98rem; }
+        .info-card {
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(250,250,252,0.95) 0%, rgba(244,246,248,0.95) 100%);
+            color: #1f2937;
+            padding: 18px 20px;
+            border: 1px solid rgba(0,0,0,0.06);
+            box-shadow: 0 2px 14px rgba(0,0,0,0.06);
+        }
+        .tamper-card {
+            border-radius: 10px;
+            background: linear-gradient(180deg, #fff3f3 0%, #fdecec 100%);
+            color: #9b1c1c;
+            padding: 18px 20px;
+            border: 1px solid #f3c8c8;
+            box-shadow: 0 2px 14px rgba(155, 28, 28, 0.08);
+        }
+        .card-title { margin: 0 0 6px 0; font-size: 1.05rem; font-weight: 700; letter-spacing: .2px; }
+        .big-text { font-size: 1.22rem; margin: 0; }
+        .muted { color: #6b7280; margin-top: 2px; font-size: 0.9rem; }
+        section[data-testid="stSidebar"] .block-container { padding-top: 12px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+st.markdown(
+    f"""
+    <div class="tf-header"><h1 class="tf-title">{APP_TITLE}</h1></div>
+    <p class="tf-sub">Upload a scanned page (TIFF/PNG/JPG/PDF) for scanner identification and tamper detection.</p>
+    """,
+    unsafe_allow_html=True,
+)
 
-# ------------- PDF utils -------------
+# -------- PDF helpers --------
 def pdf_bytes_to_bgr(file_bytes: bytes):
     if not PYMUPDF_AVAILABLE:
-        raise ImportError("PDF support not available. Add 'pymupdf' to requirements.txt and redeploy.")
+        raise ImportError("PDF support not available. Please add 'pymupdf' to requirements.")
     doc = fitz.open(stream=file_bytes, filetype="pdf")
     if doc.page_count == 0:
         raise ValueError("PDF has no pages")
@@ -60,7 +103,6 @@ def pdf_bytes_to_bgr(file_bytes: bytes):
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-# ------------- Image utils -------------
 def decode_upload_to_bgr(uploaded):
     try:
         uploaded.seek(0)
@@ -78,6 +120,7 @@ def decode_upload_to_bgr(uploaded):
         raise ValueError("Could not decode file")
     return bgr, name
 
+# -------- Residual + features --------
 def load_to_residual_from_bgr(bgr):
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) if bgr.ndim == 3 else bgr
     gray = cv2.resize(gray, IMG_SIZE, interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
@@ -138,7 +181,7 @@ def make_feat_vector(img_patch):
     rsp3 = fft_resample_feats(img_patch)
     return np.concatenate([lbp, fft6, res3, rsp3], axis=0)
 
-# ------------- Domain/type inference -------------
+# -------- Domain/type inference --------
 def infer_domain_and_type_from_path_or_name(path_or_name: str):
     p = path_or_name.replace("\\", "/").lower()
     if "/tampered images/original/" in p: return "orig_pdf_tif", None
@@ -152,7 +195,7 @@ def infer_domain_and_type_from_path_or_name(path_or_name: str):
     if re.search(r"_c(\.tif|\.tiff|\.png|\.jpg|\.jpeg|\.pdf)$", p): return "tamper_dir", "retouch"
     return "orig_pdf_tif", None
 
-# ------------- Scanner-ID artifacts -------------
+# -------- Scanner artifacts --------
 hyb_model = None
 scanner_ready = False
 scanner_err = None
@@ -163,7 +206,7 @@ try:
     if found:
         hyb_model = tf.keras.models.load_model(str(found))
     else:
-        scanner_err = "No scanner_hybrid model file found under app/models."
+        scanner_err = "No scanner_hybrid model file found under models."
 except Exception as e:
     scanner_err = f"TF model load failed: {e}"
 
@@ -214,7 +257,7 @@ def try_scanner_predict(residual):
         st.warning(f"Scanner-ID inference error: {e}")
         return "Unknown", 0.0
 
-# ------------- Single-image tamper artifacts -------------
+# -------- Single-image tamper --------
 tamper_single_ok = True
 try:
     with must_exist(ART_TP / "patch_scaler.pkl").open("rb") as f: sc_tp = pickle.load(f)
@@ -245,7 +288,7 @@ def infer_tamper_single_from_residual(residual, domain, typ_hint):
     feats = np.stack([make_feat_vector(p) for p in patches], 0)
     feats = sc_tp.transform(feats)
     p_patch = clf_tp.predict_proba(feats)[:, 1]
-    p_img = image_score_topk(p_patch, frac=TOPK)
+    p_img = image_score_topk(patch_probs=p_patch, frac=TOPK)
     thr = choose_thr_single(domain, (typ_hint or "unknown"))
     if domain == "orig_pdf_tif":
         thr = min(1.0, thr + 0.03)
@@ -255,7 +298,7 @@ def infer_tamper_single_from_residual(residual, domain, typ_hint):
         tampered = 0
     return tampered, p_img, thr, hits
 
-# ------------- Paired tamper artifacts -------------
+# -------- Paired tamper --------
 tamper_pair_ok = True
 try:
     with must_exist(ART_PAIR / "pair_scaler.pkl").open("rb") as f: sc_pair = pickle.load(f)
@@ -298,10 +341,12 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     thr_base = THR_PAIR.get("by_type", {}).get(typ, THR_PAIR.get("global", 0.5))
     thr_eff = max(thr_base - 0.02, 0.0)
     frac_use = 0.20 if typ == "retouch" else 0.30
-    n = len(p_patch); k = max(1, int(math.ceil(frac_use * n)))
+    k = max(1, int(math.ceil(frac_use * len(p_patch))))
     top_idx = np.argsort(p_patch)[-k:]
     p_img = float(np.mean(p_patch[top_idx]))
+
     def hits_topk(gate): return int(np.sum(p_patch[top_idx] >= gate))
+
     if typ == "copy-move":
         local_gate = 0.78
         hits = hits_topk(local_gate)
@@ -317,61 +362,82 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
         hits = hits_topk(local_gate)
         ok = (p_img >= thr_base) and (hits >= 2)
         thr_used = thr_base
+
     return int(ok), p_img, thr_used, hits
 
-# ------------- UI -------------
-st.write("")
+# -------- UI helpers --------
+def safe_show_image(img_bgr, thumbnail=False):
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    from PIL import Image
+    if thumbnail:
+        thumb = Image.fromarray(rgb).resize((90, 90))
+        st.image(np.array(thumb), use_container_width=True)
+    else:
+        st.image(rgb, use_container_width=True)
+
+# -------- Upload --------
 uploaded = st.file_uploader(
-    "Upload scanned page",
+    "Drag & drop or browse a file",
     type=["tif", "tiff", "png", "jpg", "jpeg", "pdf"],
-    label_visibility="collapsed"
+    help="Supported: TIFF, PNG, JPG, JPEG, PDF"
 )
 
-def safe_show_image(img_bgr):
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    try:
-        st.image(rgb, use_container_width=True)
-    except TypeError:
-        st.image(rgb)
+# Keep session logs
+if "logs" not in st.session_state:
+    st.session_state["logs"] = []
 
 if uploaded:
     try:
         bgr, display_name = decode_upload_to_bgr(uploaded)
         residual = load_to_residual_from_bgr(bgr)
 
-        # Scanner ID
+        # Scanner first
         s_lab, s_conf = try_scanner_predict(residual)
 
-        # Tamper pipeline
+        # Domain/type from filename/path
         domain, typ_hint = infer_domain_and_type_from_path_or_name(display_name)
+
+        # Prefer paired if a matching original exists
         pid = pid_from_name(display_name)
         if pid and (pid in orig_map):
-            domain = "orig_pdf_tif"
-            typ_hint = None
             is_t, p_img, thr_used, hits = paired_infer_type_aware(orig_map[pid], residual, typ_hint)
         else:
             is_t, p_img, thr_used, hits = infer_tamper_single_from_residual(residual, domain, typ_hint)
 
-        verdict = "Tampered" if is_t else "Clean"
+        verdict = "Tampered" if is_t else "Original"
 
-        colL, colR = st.columns([1.2, 1.8], gap="large")
+        # Save log (store also p/thr/hits internally for CSV even if not shown in UI)
+        st.session_state["logs"].append({
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "filename": display_name,
+            "scanner": s_lab,
+            "scanner_confidence": round(s_conf, 2),
+            "tamper_verdict": verdict,
+            "p_topk": round(float(p_img), 4),
+            "thr_used": round(float(thr_used), 4),
+            "hits": int(hits),
+        })
+
+        # Layout
+        colL, colR = st.columns([1.0, 1.4], gap="large")
         with colR:
             safe_show_image(bgr)
         with colL:
             st.markdown(
                 f"""
-                <div style='padding:16px;border-radius:8px;background:#111317;border:1px solid #2a2f3a;'>
-                    <div style='font-size:16px;color:#9aa4b2;'>Scanner</div>
-                    <div style='font-size:20px;margin-top:4px;'>{s_lab}</div>
-                    <div style='font-size:13px;color:#9aa4b2;margin-top:2px;'>{s_conf:.1f}% confidence</div>
-                    <hr style='border:none;border-top:1px solid #2a2f3a;margin:12px 0;'>
-                    <div style='font-size:16px;color:#9aa4b2;'>Tamper verdict</div>
-                    <div style='font-size:20px;margin-top:4px;'>{verdict}</div>
-                    <div style='font-size:12px;color:#9aa4b2;margin-top:6px;'>p={p_img:.3f}, thr={thr_used:.3f}, hits={hits}</div>
+                <div class="info-card">
+                    <div class="card-title">Scanner</div>
+                    <p class="big-text">{s_lab}</p>
+                    <p class="muted">{s_conf:.1f}% confidence</p>
+                </div>
+                <div class="tamper-card">
+                    <div class="card-title">Tamper verdict</div>
+                    <p class="big-text">{verdict}</p>
                 </div>
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
+
     except ImportError as e:
         st.error(str(e))
     except Exception as e:
@@ -379,4 +445,40 @@ if uploaded:
         st.error("Inference error")
         st.code(traceback.format_exc())
 else:
-    st.info("Drag-and-drop a TIF/TIFF/PNG/JPG/JPEG/PDF to analyze.")
+    st.info("Upload a TIF/TIFF/PNG/JPG/PDF to analyze.")
+
+# -------- Sidebar logs + download --------
+st.sidebar.title("Logs")
+
+def logs_df():
+    logs = st.session_state.get("logs", [])
+    if not logs:
+        return pd.DataFrame(columns=[
+            "timestamp","filename","scanner","scanner_confidence",
+            "tamper_verdict","p_topk","thr_used","hits"
+        ])
+    return pd.DataFrame(logs)
+
+if st.session_state["logs"]:
+    # Download buttons
+    df = logs_df()
+    csv_buf = io.StringIO()
+    df.to_csv(csv_buf, index=False)
+    st.sidebar.download_button(
+        label="Download logs (CSV)",
+        data=csv_buf.getvalue(),
+        file_name=f"tracefinder_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    if st.sidebar.button("Clear logs", use_container_width=True):
+        st.session_state["logs"] = []
+        st.sidebar.success("Logs cleared. Upload a new file to start fresh.")
+
+    # Visual listing
+    for i, log in enumerate(st.session_state["logs"][::-1]):
+        with st.sidebar.expander(f"{log['timestamp']} — {log['filename']}", expanded=False):
+            st.write(f"*Scanner:* {log['scanner']} ({log['scanner_confidence']:.1f}%)")
+            st.write(f"*Tamper:* {log['tamper_verdict']}")
+else:
+    st.sidebar.info("No logs yet.")
