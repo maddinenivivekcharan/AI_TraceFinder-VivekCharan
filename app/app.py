@@ -1,5 +1,3 @@
-# app/app.py
-
 import os, re, glob, math, json, pickle
 from pathlib import Path
 import numpy as np
@@ -406,7 +404,7 @@ if uploaded:
 
         verdict = "Tampered" if is_t else "Original"
 
-        # Save log (store also p/thr/hits internally for CSV even if not shown in UI)
+        # Save log
         st.session_state["logs"].append({
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "filename": display_name,
