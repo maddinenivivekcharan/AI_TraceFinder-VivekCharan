@@ -1,22 +1,21 @@
-# requirements.txt (Revised)
+# requirements.txt (Final Recommended List)
 streamlit==1.39.0
-# Use 1.26.x or 1.27.x, as 2.x causes frequent dependency issues
 numpy==1.26.4 
-
-# Use 1.12.x or 1.13.0, as it has better Py3.11 support than 1.13.1
-scipy==1.13.0 
-
-# Dependency for PyMuPDF; ensure it's compatible
-# NOTE: You may need to remove this line if it conflicts with pymupdf
-protobuf>=5.28.2 
-typing_extensions>=4.9.0
-
-# Other packages (keep these for now)
 opencv-python-headless==4.10.0.84
 Pillow==10.4.0
-scikit-image==0.25.0
+
+# Relaxed pin: Use >= to let the installer find a compatible version
+scikit-image>=0.25.0 
+
 scikit-learn==1.5.2
+scipy==1.13.0 # Downgraded SciPy for better Py3.11 wheel compatibility
 pywavelets==1.7.0
 pymupdf==1.24.12
-imagecodecs-lite==2023.9.18
-tensorflow-cpu==2.20.0 
+
+# CRITICAL FIX: Relaxed pin on imagecodecs-lite to let installer find
+# a version compatible with Python 3.11 (e.g., 2022.9.26 or later that has a wheel)
+imagecodecs-lite>=2022.9.26 
+
+tensorflow-cpu==2.20.0
+protobuf>=5.28.2
+typing_extensions>=4.9.0
