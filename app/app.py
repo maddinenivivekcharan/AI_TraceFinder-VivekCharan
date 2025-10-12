@@ -15,6 +15,8 @@ except Exception:
     PYMUPDF_AVAILABLE = False
 
 from skimage.feature import local_binary_pattern as sk_lbp
+from PIL import Image  # for TIFF fallback
+import io as _io
 
 # -------- Config --------
 APP_TITLE = "TraceFinder — Forensic Scanner Identification & Tampered Detection"
@@ -101,6 +103,7 @@ def pdf_bytes_to_bgr(file_bytes: bytes):
         img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
+# -------- Image helpers --------
 def decode_upload_to_bgr(uploaded):
     try:
         uploaded.seek(0)
@@ -112,11 +115,25 @@ def decode_upload_to_bgr(uploaded):
     if ext == ".pdf":
         bgr = pdf_bytes_to_bgr(raw)
         return bgr, name
+    # Try OpenCV first
     buf = np.frombuffer(raw, np.uint8)
     bgr = cv2.imdecode(buf, cv2.IMREAD_UNCHANGED)
+    # Robust TIFF fallback via Pillow (handles BigTIFF/varied compression)
+    if bgr is None and ext in [".tif", ".tiff"]:
+        img = Image.open(_io.BytesIO(raw))
+        img = img.convert("RGB")
+        bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     if bgr is None:
         raise ValueError("Could not decode file")
     return bgr, name
+
+def safe_show_image(img_bgr, thumbnail=False):
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    if thumbnail:
+        thumb = Image.fromarray(rgb).resize((90, 90))
+        st.image(np.array(thumb), use_column_width=True)
+    else:
+        st.image(rgb, use_column_width=True)
 
 # -------- Residual + features --------
 def load_to_residual_from_bgr(bgr):
@@ -358,20 +375,10 @@ def paired_infer_type_aware(clean_path, suspect_residual, typ_hint):
     else:
         local_gate = 0.80
         hits = hits_topk(local_gate)
-        ok = (p_img >= thr_base) and (hits >= 2)
+        ok = (p_img >= thr_base) and (hits >= 2))
         thr_used = thr_base
 
     return int(ok), p_img, thr_used, hits
-
-# -------- UI helpers --------
-def safe_show_image(img_bgr, thumbnail=False):
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    from PIL import Image
-    if thumbnail:
-        thumb = Image.fromarray(rgb).resize((90, 90))
-        st.image(np.array(thumb), use_column_width=True)
-    else:
-        st.image(rgb, use_column_width=True)
 
 # -------- Upload --------
 uploaded = st.file_uploader(
