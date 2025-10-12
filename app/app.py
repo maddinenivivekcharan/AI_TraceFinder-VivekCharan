@@ -458,7 +458,6 @@ def logs_df():
     return pd.DataFrame(logs)
 
 if st.session_state["logs"]:
-    # Download buttons
     df = logs_df()
     csv_buf = io.StringIO()
     df.to_csv(csv_buf, index=False)
@@ -473,7 +472,6 @@ if st.session_state["logs"]:
         st.session_state["logs"] = []
         st.sidebar.success("Logs cleared. Upload a new file to start fresh.")
 
-    # Visual listing
     for i, log in enumerate(st.session_state["logs"][::-1]):
         with st.sidebar.expander(f"{log['timestamp']} — {log['filename']}", expanded=False):
             st.write(f"*Scanner:* {log['scanner']} ({log['scanner_confidence']:.1f}%)")
