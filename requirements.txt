@@ -5,7 +5,7 @@ Pillow==10.4.0
 scikit-image==0.25.0
 scikit-learn==1.5.2
 PyWavelets==1.7.0
-PyMuPDF==1.24.10
+PyMuPDF==1.24.11
 tensorflow-cpu==2.20.0
-protobuf==4.25.3
+protobuf>=5.28.2
 typing_extensions>=4.9.0
